@@ -10,6 +10,7 @@ from rlshield.recorder import LoggingRecorder, VideoRecorder
 from rlshield.model_simulator import SimulationExecutor, Tracker
 
 from gridstorm.plotter import Plotter
+from gridstorm.annotations import ProgramAnnotation
 
 import logging
 logger = logging.getLogger(__name__)
@@ -46,22 +47,28 @@ def main():
     #args = parser.parse_args()
 
     path = "/Users/sjunges/cal/gridworld-by-storm/examples/grid_alice_v1.nm"
+    annot = dict({'ego-xvar-module' : 'alice',
+                      'ego-xvar-name' : 'ax',
+                      'ego-yvar-module' : 'alice',
+                      'ego-yvar-name': 'ay',
+                      'xmax-constant': 'axMax',
+                      'ymax-constant': 'ayMax'
+                      })
+    shield = False
     prism_program = sp.parse_prism_program(path)
+    program_annotation = ProgramAnnotation(annot)
     prop = sp.parse_properties_for_prism_program("Pmax=? [ \"notbad\" U \"goal\"]", prism_program)[0]
     raw_formula = prop.raw_formula
 
     model = build_pomdp(prism_program)
-    state_vals = model.state_valuations
     model = sp.pomdp.make_canonic(model)
     # TODO make cannoci shoudl prserve state labels
     winning_region = compute_winning_region(model, raw_formula)
     otf_shield = construct_otf_shield(model, winning_region)
     tracker = Tracker(model, otf_shield)
 
-    #import plotter
-    #plotter = plotter.Plotter(prism_program, model, state_vals, 6,6)
 
-    renderer = Plotter(prism_program,model,state_vals,6,6)
+    renderer = Plotter(prism_program,program_annotation,model)
     recorder = VideoRecorder(renderer)
     executor = SimulationExecutor(model, tracker)
     executor.simulate(recorder,nr_runs=1,maxsteps=20)
