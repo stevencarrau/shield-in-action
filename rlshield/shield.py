@@ -6,6 +6,7 @@ import stormpy.simulator
 import stormpy.pomdp
 import random
 
+from rlshield.noshield import NoShield
 from rlshield.recorder import LoggingRecorder, VideoRecorder
 from rlshield.model_simulator import SimulationExecutor, Tracker
 
@@ -39,7 +40,7 @@ def build_pomdp(program):
 
 def main():
     random.seed(3)
-    parser = argparse.ArgumentParser(description='Starter project for stormpy.')
+    parser = argparse.ArgumentParser(description='Starter project for the shielded POMDP simulator.')
 
     #parser.add_argument('--model', '-m', help='Model file', required=True)
     #parser.add_argument('--property', '-p', help='Property', required=True)
@@ -62,9 +63,12 @@ def main():
 
     model = build_pomdp(prism_program)
     model = sp.pomdp.make_canonic(model)
-    # TODO make cannoci shoudl prserve state labels
-    winning_region = compute_winning_region(model, raw_formula)
-    otf_shield = construct_otf_shield(model, winning_region)
+    if shield:
+        winning_region = compute_winning_region(model, raw_formula)
+        otf_shield = construct_otf_shield(model, winning_region)
+    else:
+        logger.warning("Shielding disabled.")
+        otf_shield = NoShield()
     tracker = Tracker(model, otf_shield)
 
 
