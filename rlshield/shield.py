@@ -11,76 +11,128 @@ from rlshield.recorder import LoggingRecorder, VideoRecorder
 from rlshield.model_simulator import SimulationExecutor, Tracker
 
 from gridstorm.plotter import Plotter
-from gridstorm.annotations import ProgramAnnotation
+import gridstorm.models as models
 
 import logging
 logger = logging.getLogger(__name__)
 #logging.basicConfig(format='%(levelname)s:%(message)s', level=logging.INFO)
-logging.basicConfig(filename='example.log', filemode='w', level=logging.DEBUG)
+logging.basicConfig(filename='example.log', filemode='w', level=logging.INFO)
 logging.getLogger("matplotlib").setLevel(logging.INFO)
 
 
-def compute_winning_region(model, formula):
+def compute_winning_region(model, formula, initial=True):
     options = sp.pomdp.IterativeQualitativeSearchOptions()
+    model = sp.pomdp.prepare_pomdp_for_qualitative_search_Double(model, formula)
     solver = sp.pomdp.create_iterative_qualitative_search_solver_Double(model, formula, options)
+    logger.debug("compute winning region...")
     ## TODO select a good lookahead
-    solver.compute_winning_region(model.nr_states)
+    if initial:
+        solver.compute_winning_policy_for_initial_states(100)
+    else:
+        solver.compute_winning_region(100)
+    logger.debug("done.")
     return solver.last_winning_region
 
 def construct_otf_shield(model, winning_region):
     return sp.pomdp.BeliefSupportWinningRegionQueryInterfaceDouble(model, winning_region)
 
-def build_pomdp(program):
-    options = stormpy.BuilderOptions([])
+def build_pomdp(program, formula):
+    options = stormpy.BuilderOptions([formula])
     options.set_build_state_valuations()
     options.set_build_choice_labels()
     options.set_build_all_labels()
-
+    logger.debug("Start building the POMDP")
     return sp.build_sparse_model_with_options(program, options)
 
+experiment_to_grid_model_names = {
+    "avoid": models.surveillance,
+    "refuel": models.refuel,
+    'obstacle': models.obstacle,
+    "intercept": models.intercept,
+    'evade': models.evade,
+    'rocks': models.rocks
+}
+
 def main():
-    random.seed(3)
     parser = argparse.ArgumentParser(description='Starter project for the shielded POMDP simulator.')
+    parser.add_argument('--grid-model', '-m', help='Model from the gridworld-by-storm visualisation set', required=True)
+    parser.add_argument('--constants', '-c', help="Constants to select the instance of the model")
+    parser.add_argument('--load-winning-region', '-wr', help="Load a winning region")
+    parser.add_argument('--maxsteps', '-s', help="Maximal number of steps", type=int, default=100)
+    #parser.add_argument('--maxrendering', '-r', help='Maximal length of a rendering', type=int, default=100)
+    parser.add_argument('--max-runs', '-NN', help="Number of runs", type=int, default=1)
+    parser.add_argument('--nr-finisher-runs', '-N', type=int, default=1)
+    parser.add_argument('--video-path', help="Path for the video")
+    parser.add_argument('--finishers-only', action='store_true')
+    parser.add_argument('--seed', help="Seed for randomised movements", default=3)
+    parser.add_argument('--title', help="Title for video")
 
-    #parser.add_argument('--model', '-m', help='Model file', required=True)
-    #parser.add_argument('--property', '-p', help='Property', required=True)
+    random.seed(3)
 
-    #args = parser.parse_args()
+    args = parser.parse_args()
+    #input = models.refuel(N=6,E=8)
+    logger.info("Look up problem definition....")
+    model = experiment_to_grid_model_names[args.grid_model]
+    constants = dict(item.split('=') for item in args.constants.split(","))
+    input = model(**constants)
+    #input = models.intercept(6,1)
+    #input = models.drone8(6,2,True)
 
-    path = "/Users/sjunges/cal/gridworld-by-storm/examples/grid_alice_v1.nm"
-    annot = dict({'ego-xvar-module' : 'alice',
-                      'ego-xvar-name' : 'ax',
-                      'ego-yvar-module' : 'alice',
-                      'ego-yvar-name': 'ay',
-                      'xmax-constant': 'axMax',
-                      'ymax-constant': 'ayMax'
-                      })
-    shield = False
-    prism_program = sp.parse_prism_program(path)
-    program_annotation = ProgramAnnotation(annot)
-    prop = sp.parse_properties_for_prism_program("Pmax=? [ \"notbad\" U \"goal\"]", prism_program)[0]
+    logger.info("Load winning region...")
+    winning_region, preamble = stormpy.pomdp.BeliefSupportWinningRegion.load_from_file(args.load_winning_region)
+    for line in preamble.split('\n'):
+        if line == "":
+            continue
+        if line.startswith("model hash: "):
+            hash = int(line[12:])
+    logger.info(f"Winning region for a model with hash: {hash}")
+
+
+    compute_shield = False
+    initial = True
+    logger.info("Loading problem definition....")
+    prism_program = sp.parse_prism_program(input.path)
+    prop = sp.parse_properties_for_prism_program(input.properties[0], prism_program)[0]
+    prism_program, props = stormpy.preprocess_prism_program(prism_program, [prop], input.constants)
+    prop = props[0]
+    prism_program = prism_program.as_prism_program()
     raw_formula = prop.raw_formula
 
-    model = build_pomdp(prism_program)
+    logger.info("Construct POMDP representation...")
+    model = build_pomdp(prism_program, raw_formula)
     model = sp.pomdp.make_canonic(model)
-    if shield:
-        winning_region = compute_winning_region(model, raw_formula)
+    print(model)
+    if model.hash() != hash:
+        raise RuntimeError("Winning Region does not agree with Model")
+
+    if compute_shield:
+        winning_region = compute_winning_region(model, raw_formula, initial)
+
+    if winning_region is not None:
         otf_shield = construct_otf_shield(model, winning_region)
     else:
         logger.warning("Shielding disabled.")
         otf_shield = NoShield()
+
     tracker = Tracker(model, otf_shield)
+    if args.video_path:
+        renderer = Plotter(prism_program, input.annotations, model)
+        if input.ego_icon is not None:
+            renderer.load_ego_image(input.ego_icon.path, (0.6 / renderer._maxX))
+        if args.title:
+            renderer.set_title(args.title)
 
+        recorder = VideoRecorder(renderer,only_keep_finishers=args.finishers_only)
+    else:
+        recorder = LoggingRecorder(only_keep_finishers=args.finishers_only)
 
-    renderer = Plotter(prism_program,program_annotation,model)
-    recorder = VideoRecorder(renderer)
     executor = SimulationExecutor(model, tracker)
-    executor.simulate(recorder,nr_runs=1,maxsteps=20)
+    executor.simulate(recorder, total_nr_runs=args.max_runs, nr_good_runs=args.nr_finisher_runs, maxsteps=args.maxsteps)
+    print(len(recorder._paths))
+    for p in recorder._paths:
+        print(len(p))
 
-    renderer.load_ego_image('/Users/sjunges/cal/gridworld-by-storm/tortoise.png', zoom=0.12)
     recorder.save()
-
-
 
 if __name__ == "__main__":
     main()

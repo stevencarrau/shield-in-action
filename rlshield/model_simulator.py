@@ -53,9 +53,12 @@ class SimulationExecutor:
         self._simulator.set_full_observability(True) # We want to access the full state space for visualisations.
         self._shield = shield
 
-    def simulate(self, recorder, nr_runs = 5, maxsteps=30):
+    def simulate(self, recorder, nr_good_runs = 1, total_nr_runs = 5, maxsteps=30):
+        result = []
+        good_runs = 0
         #TODO what if we are not in a safe state.
-        for m in range(nr_runs):
+        for m in range(total_nr_runs):
+            finished = False
             state = self._simulator.restart()
             self._shield.reset()
             recorder.start_path()
@@ -65,8 +68,12 @@ class SimulationExecutor:
                 actions = self._simulator.available_actions()
                 safe_actions = self._shield.shielded_actions(range(len(actions)))
                 logger.debug(f"Number of actions: {actions}. Safe action indices: {safe_actions}")
-                select_action = random.randint(0, len(safe_actions) - 1)
-                action = safe_actions[select_action]
+                if len(safe_actions) == 0:
+                    select_action = random.randint(0, len(actions) - 1)
+                    action = actions[select_action]
+                else:
+                    select_action = random.randint(0, len(safe_actions) - 1)
+                    action = safe_actions[select_action]
                 logger.debug(f"Select action: {action}")
                 state = self._simulator.step(action)
                 self._shield.track(action, self._model.get_observation(state))
@@ -80,8 +87,9 @@ class SimulationExecutor:
                 recorder.record_belief(self._shield.list_support())
 
                 if self._simulator.is_done():
-                    logger.debug(f"Done!")
-                    # print("Trapped!")
+                    logger.info(f"Done after {n} steps!")
+                    finished = True
+                    good_runs += 1
                     break
             actions = self._simulator.available_actions()
             safe_actions = self._shield.shielded_actions(range(len(actions)))
@@ -89,7 +97,12 @@ class SimulationExecutor:
             recorder.record_available_actions(actions)
             recorder.record_allowed_actions(safe_actions)
 
-            recorder.end_path()
+            recorder.end_path(finished)
+            result.append(self._simulator.is_done())
+            if good_runs == nr_good_runs:
+                break
+        return result
+
 
 
 
