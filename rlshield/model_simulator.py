@@ -75,7 +75,7 @@ class SimulationExecutor:
                     select_action = random.randint(0, len(safe_actions) - 1)
                     action = safe_actions[select_action]
                 logger.debug(f"Select action: {action}")
-                state = self._simulator.step(action)
+                state, _ = self._simulator.step(action)
                 self._shield.track(action, self._model.get_observation(state))
                 assert state in self._shield.list_support()
                 logger.debug(f"Now in state {state}. Belief: {self._shield.list_support()}. Safe: {self._shield.monitor()}")
