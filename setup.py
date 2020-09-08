@@ -11,10 +11,9 @@ setup(
     description="Shielding on POMDPs with Storm",
     long_description=long_description,
     long_description_content_type='text/markdown',
-
     packages=["rlshield"],
     install_requires=[
-        "stormpy>=1.4.0"
+        "stormpy>=1.6.0", "gridstorm"
     ],
     python_requires='>=3',
 )
