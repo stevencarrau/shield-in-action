@@ -60,6 +60,7 @@ class SimulationExecutor:
         for m in range(total_nr_runs):
             finished = False
             state = self._simulator.restart()
+            logger.info("Start new episode.")
             self._shield.reset()
             recorder.start_path()
             recorder.record_state(state)

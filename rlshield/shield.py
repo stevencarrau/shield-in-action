@@ -136,6 +136,7 @@ def main():
             renderer.set_title(args.title)
         recorder = VideoRecorder(renderer, only_keep_finishers=args.finishers_only)
     else:
+        logger.info("No video path set, rendering disabled.")
         recorder = LoggingRecorder(only_keep_finishers=args.finishers_only)
 
     executor = SimulationExecutor(model, tracker)
