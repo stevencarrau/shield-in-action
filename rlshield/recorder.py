@@ -1,5 +1,9 @@
-import gridstorm.plotter as plotter
+import os
+import os.path
+import logging
+
 import gridstorm.trace as trace
+logger = logging.getLogger(__name__)
 
 class Recorder:
     def __init__(self, finishers_only):
@@ -41,9 +45,10 @@ class VideoRecorder(Recorder):
         for path in self._paths:
             path.trim_from_end(length)
 
-    def save(self):
+    def save(self, path, prefix):
         for i, trace in enumerate(self._paths):
-            mp4file = f"test-run{i}.mp4"
+            mp4file = os.path.join(path,f"{prefix}-{i}.mp4")
+            logger.info(f"Rendering {mp4file}")
             self._renderer.record(mp4file, trace)
 
 
@@ -87,7 +92,7 @@ class LoggingRecorder(Recorder):
     def record_allowed_actions(self, actions):
         pass
 
-    def save(self):
+    def save(self, path, prefix):
         for path in self._paths:
             print(" ".join(path))
         for observed_path in self._observed_paths:
