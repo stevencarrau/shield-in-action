@@ -5,6 +5,8 @@ import stormpy.examples.files
 import stormpy.simulator
 import stormpy.pomdp
 import random
+import os.path
+import inspect
 
 from rlshield.noshield import NoShield
 from rlshield.recorder import LoggingRecorder, VideoRecorder
@@ -16,16 +18,12 @@ import gridstorm.models as models
 import logging
 logger = logging.getLogger(__name__)
 #logging.basicConfig(format='%(levelname)s:%(message)s', level=logging.INFO)
-logging.basicConfig(filename='example.log', filemode='w', level=logging.INFO)
-logging.getLogger("matplotlib").setLevel(logging.INFO)
-
 
 def compute_winning_region(model, formula, initial=True):
     options = sp.pomdp.IterativeQualitativeSearchOptions()
     model = sp.pomdp.prepare_pomdp_for_qualitative_search_Double(model, formula)
     solver = sp.pomdp.create_iterative_qualitative_search_solver_Double(model, formula, options)
     logger.debug("compute winning region...")
-    ## TODO select a good lookahead
     if initial:
         solver.compute_winning_policy_for_initial_states(100)
     else:
@@ -60,40 +58,45 @@ def main():
     parser.add_argument('--load-winning-region', '-wr', help="Load a winning region")
     parser.add_argument('--maxsteps', '-s', help="Maximal number of steps", type=int, default=100)
     #parser.add_argument('--maxrendering', '-r', help='Maximal length of a rendering', type=int, default=100)
-    parser.add_argument('--max-runs', '-NN', help="Number of runs", type=int, default=1)
+    parser.add_argument('--max-runs', '-NN', help="Number of runs", type=int, default=10000000)
     parser.add_argument('--nr-finisher-runs', '-N', type=int, default=1)
     parser.add_argument('--video-path', help="Path for the video")
     parser.add_argument('--finishers-only', action='store_true')
     parser.add_argument('--seed', help="Seed for randomised movements", default=3)
     parser.add_argument('--title', help="Title for video")
+    parser.add_argument('--noshield', help="Simulate without a shield", action='store_true')
 
-    random.seed(3)
+    logging.basicConfig(filename='rendering.log', filemode='w', level=logging.INFO)
+    logging.getLogger("matplotlib").setLevel(logging.INFO)
+    #logging.getLogger("rlshield.model_simulator").setLevel(logging.DEBUG)
 
     args = parser.parse_args()
-    #input = models.refuel(N=6,E=8)
+    random.seed(args.seed)
     logger.info("Look up problem definition....")
     model = experiment_to_grid_model_names[args.grid_model]
+    model_constants = list(inspect.signature(model).parameters.keys())
+    if args.constants is None and len(model_constants) > 0:
+        raise RuntimeError("Model constants {} defined, but not given by command line".format(",".join(model_constants)))
     constants = dict(item.split('=') for item in args.constants.split(","))
     input = model(**constants)
-    #input = models.intercept(6,1)
-    #input = models.drone8(6,2,True)
 
-    logger.info("Load winning region...")
-    winning_region, preamble = stormpy.pomdp.BeliefSupportWinningRegion.load_from_file(args.load_winning_region)
-    for line in preamble.split('\n'):
-        if line == "":
-            continue
-        if line.startswith("model hash: "):
-            hash = int(line[12:])
-    logger.info(f"Winning region for a model with hash: {hash}")
-
+    if args.load_winning_region:
+        logger.info("Load winning region...")
+        winning_region, preamble = stormpy.pomdp.BeliefSupportWinningRegion.load_from_file(args.load_winning_region)
+        for line in preamble.split('\n'):
+            if line == "":
+                continue
+            if line.startswith("model hash: "):
+                hash = int(line[12:])
+    else:
+        winning_region = None
 
     compute_shield = False
     initial = True
     logger.info("Loading problem definition....")
     prism_program = sp.parse_prism_program(input.path)
     prop = sp.parse_properties_for_prism_program(input.properties[0], prism_program)[0]
-    prism_program, props = stormpy.preprocess_prism_program(prism_program, [prop], input.constants)
+    prism_program, props = stormpy.preprocess_symbolic_input(prism_program, [prop], input.constants)
     prop = props[0]
     prism_program = prism_program.as_prism_program()
     raw_formula = prop.raw_formula
@@ -102,17 +105,27 @@ def main():
     model = build_pomdp(prism_program, raw_formula)
     model = sp.pomdp.make_canonic(model)
     print(model)
-    if model.hash() != hash:
-        raise RuntimeError("Winning Region does not agree with Model")
+    #if model.hash() != hash:
+    #    raise RuntimeError("Winning Region does not agree with Model")
 
     if compute_shield:
         winning_region = compute_winning_region(model, raw_formula, initial)
 
     if winning_region is not None:
         otf_shield = construct_otf_shield(model, winning_region)
-    else:
-        logger.warning("Shielding disabled.")
+    elif args.noshield:
         otf_shield = NoShield()
+    else:
+        logger.warning("No winning region: Shielding disabled.")
+        otf_shield = NoShield()
+
+    if args.load_winning_region:
+        videoname = os.path.splitext(os.path.basename(args.load_winning_region))[0]
+    else:
+        if compute_shield:
+            raise RuntimeWarning("Misleading names for videos.")
+        constant_values = "-".join(constants.values())
+        videoname = f"{args.grid_model}-{constant_values}-noshield"
 
     tracker = Tracker(model, otf_shield)
     if args.video_path:
@@ -121,18 +134,13 @@ def main():
             renderer.load_ego_image(input.ego_icon.path, (0.6 / renderer._maxX))
         if args.title:
             renderer.set_title(args.title)
-
-        recorder = VideoRecorder(renderer,only_keep_finishers=args.finishers_only)
+        recorder = VideoRecorder(renderer, only_keep_finishers=args.finishers_only)
     else:
         recorder = LoggingRecorder(only_keep_finishers=args.finishers_only)
 
     executor = SimulationExecutor(model, tracker)
     executor.simulate(recorder, total_nr_runs=args.max_runs, nr_good_runs=args.nr_finisher_runs, maxsteps=args.maxsteps)
-    print(len(recorder._paths))
-    for p in recorder._paths:
-        print(len(p))
-
-    recorder.save()
+    recorder.save(args.video_path, f"{videoname}")
 
 if __name__ == "__main__":
     main()
