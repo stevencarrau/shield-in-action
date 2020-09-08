@@ -91,6 +91,9 @@ def main():
     else:
         winning_region = None
 
+    if not os.path.isdir(args.video_path):
+        raise RuntimeError(f"Video path {args.video_path} not known!")
+
     compute_shield = False
     initial = True
     logger.info("Loading problem definition....")
