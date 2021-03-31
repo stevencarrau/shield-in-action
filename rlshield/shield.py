@@ -9,7 +9,7 @@ import os.path
 import inspect
 
 from rlshield.noshield import NoShield
-from rlshield.recorder import LoggingRecorder, VideoRecorder
+from rlshield.recorder import LoggingRecorder, VideoRecorder, StatsRecorder
 from rlshield.model_simulator import SimulationExecutor, Tracker
 
 from gridstorm.plotter import Plotter
@@ -61,6 +61,7 @@ def main():
     parser.add_argument('--max-runs', '-NN', help="Number of runs", type=int, default=10000000)
     parser.add_argument('--nr-finisher-runs', '-N', type=int, default=1)
     parser.add_argument('--video-path', help="Path for the video")
+    parser.add_argument('--stats-path', help="Path for recording stats")
     parser.add_argument('--finishers-only', action='store_true')
     parser.add_argument('--seed', help="Seed for randomised movements", default=3)
     parser.add_argument('--title', help="Title for video")
@@ -91,8 +92,11 @@ def main():
     else:
         winning_region = None
 
-    if not os.path.isdir(args.video_path):
+    if args.video_path is not None and not os.path.isdir(args.video_path):
         raise RuntimeError(f"Video path {args.video_path} not known!")
+    if args.stats_path is not None and not os.path.isdir(args.stats_path):
+        raise RuntimeError(f"Stats path {args.stats_path} not known!")
+
 
     compute_shield = False
     initial = True
@@ -138,6 +142,8 @@ def main():
         if args.title:
             renderer.set_title(args.title)
         recorder = VideoRecorder(renderer, only_keep_finishers=args.finishers_only)
+    elif args.stats_path:
+        recorder = StatsRecorder(only_keep_finishers=args.finishers_only)
     else:
         logger.info("No video path set, rendering disabled.")
         recorder = LoggingRecorder(only_keep_finishers=args.finishers_only)

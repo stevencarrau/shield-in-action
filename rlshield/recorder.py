@@ -2,6 +2,8 @@ import os
 import os.path
 import logging
 
+import numpy
+
 import gridstorm.trace as trace
 logger = logging.getLogger(__name__)
 
@@ -98,3 +100,56 @@ class LoggingRecorder(Recorder):
         for observed_path in self._observed_paths:
             print(" ".join(observed_path))
 
+class StatsRecorder(Recorder):
+    def __init__(self, only_keep_finishers):
+        super().__init__(only_keep_finishers)
+        self._nr_allowed = None
+        self._nr_available = None
+        self._nr_allowed_paths = []
+        self._nr_available_paths = []
+
+    def start_path(self):
+        assert len(self._nr_allowed_paths) == len(self._nr_available_paths)
+        self._nr_allowed = []
+        self._nr_available = []
+
+    def end_path(self, finished):
+        if not self._only_keep_finishers or finished:
+            self._nr_allowed_paths.append(self._nr_allowed)
+            self._nr_available_paths.append(self._nr_available)
+        self._nr_allowed = None
+        self._nr_available = None
+
+    def record_state(self, state):
+        pass
+
+    def record_belief(self, belief):
+        pass
+
+    def record_selected_action(self, action):
+        pass
+
+    def record_available_actions(self, actions):
+        self._nr_available.append(len(actions))
+
+    def record_allowed_actions(self, actions):
+        self._nr_allowed.append(len(actions))
+
+    def save(self, filepath, prefix):
+        def average(l):
+            return sum(l) / len(l)
+
+        avg_allowed = []
+        avg_available = []
+        avg_fraction = []
+        for allowed_path, available_path in zip(self._nr_allowed_paths, self._nr_available_paths):
+            print(f"{average(allowed_path)} out of {average(available_path)}")
+            avg_allowed.append(average(allowed_path))
+            avg_available.append(average(available_path))
+            avg_fraction.append(avg_allowed[-1] / avg_available[-1])
+        print(f"{average(avg_allowed)} out of {average(avg_available)}")
+        print(f"Average fraction: {average(avg_fraction)}, stdev: {numpy.std(avg_fraction)}")
+
+
+            #for x,y in zip(allowed_path, available_path):
+            #    print(f"{x} out of {y}")
