@@ -1,6 +1,8 @@
 .git/
 .gitignore
-.dockerignore
+
+*.log
+*.mp4
 
 build
 dist
@@ -16,7 +18,6 @@ __pycache__
 
 # Compiled Documentation
 docs/_build
-Dockerfile
 .idea
 .DS_Store
 
