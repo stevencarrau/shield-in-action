@@ -143,13 +143,10 @@ class StatsRecorder(Recorder):
         avg_available = []
         avg_fraction = []
         for allowed_path, available_path in zip(self._nr_allowed_paths, self._nr_available_paths):
-            print(f"{average(allowed_path)} out of {average(available_path)}")
+            #print(f"{average(allowed_path)} out of {average(available_path)}")
             avg_allowed.append(average(allowed_path))
             avg_available.append(average(available_path))
             avg_fraction.append(avg_allowed[-1] / avg_available[-1])
-        print(f"{average(avg_allowed)} out of {average(avg_available)}")
-        print(f"Average fraction: {average(avg_fraction)}, stdev: {numpy.std(avg_fraction)}")
-
-
-            #for x,y in zip(allowed_path, available_path):
-            #    print(f"{x} out of {y}")
+#        print(f"{average(avg_allowed)} out of {average(avg_available)}")
+        with open(os.path.join(filepath, prefix + ".stats"), 'w') as file:
+            file.write(f"Available avg: {average(avg_fraction)}\nAvailable avg stdev: {numpy.std(avg_fraction)}")
