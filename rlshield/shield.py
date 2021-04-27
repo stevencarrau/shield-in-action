@@ -89,16 +89,16 @@ def main():
                 continue
             if line.startswith("model hash: "):
                 hash = int(line[12:])
+        compute_shield = False
     else:
         winning_region = None
+        compute_shield = True
 
     if args.video_path is not None and not os.path.isdir(args.video_path):
         raise RuntimeError(f"Video path {args.video_path} not known!")
     if args.stats_path is not None and not os.path.isdir(args.stats_path):
         raise RuntimeError(f"Stats path {args.stats_path} not known!")
 
-
-    compute_shield = False
     initial = True
     logger.info("Loading problem definition....")
     prism_program = sp.parse_prism_program(input.path)
@@ -129,10 +129,11 @@ def main():
     if args.load_winning_region:
         videoname = os.path.splitext(os.path.basename(args.load_winning_region))[0]
     else:
-        if compute_shield:
-            raise RuntimeWarning("Misleading names for videos.")
         constant_values = "-".join(constants.values())
-        videoname = f"{args.grid_model}-{constant_values}-noshield"
+        if compute_shield:
+            videoname = f"{args.grid_model}-{constant_values}-computed-shield"
+        else:
+            videoname = f"{args.grid_model}-{constant_values}-noshield"
 
     tracker = Tracker(model, otf_shield)
     if args.video_path:
