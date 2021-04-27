@@ -65,13 +65,14 @@ def main():
     parser.add_argument('--finishers-only', action='store_true')
     parser.add_argument('--seed', help="Seed for randomised movements", default=3)
     parser.add_argument('--title', help="Title for video")
+    parser.add_argument('--logfile', help="File to log to", default="rendering.log")
     parser.add_argument('--noshield', help="Simulate without a shield", action='store_true')
 
-    logging.basicConfig(filename='rendering.log', filemode='w', level=logging.INFO)
+    args = parser.parse_args()
+    logging.basicConfig(filename=f'{args.logfile}', filemode='w', level=logging.INFO)
     logging.getLogger("matplotlib").setLevel(logging.INFO)
     #logging.getLogger("rlshield.model_simulator").setLevel(logging.DEBUG)
 
-    args = parser.parse_args()
     random.seed(args.seed)
     logger.info("Look up problem definition....")
     model = experiment_to_grid_model_names[args.grid_model]
