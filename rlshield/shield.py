@@ -93,7 +93,7 @@ def main():
         compute_shield = False
     else:
         winning_region = None
-        compute_shield = True
+        compute_shield = not args.noshield
 
     if args.video_path is not None and not os.path.isdir(args.video_path):
         raise RuntimeError(f"Video path {args.video_path} not known!")
