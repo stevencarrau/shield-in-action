@@ -143,15 +143,17 @@ def main():
         if args.title:
             renderer.set_title(args.title)
         recorder = VideoRecorder(renderer, only_keep_finishers=args.finishers_only)
+        output_path = args.video_path
     elif args.stats_path:
         recorder = StatsRecorder(only_keep_finishers=args.finishers_only)
+        output_path = args.stats_path
     else:
         logger.info("No video path set, rendering disabled.")
         recorder = LoggingRecorder(only_keep_finishers=args.finishers_only)
 
     executor = SimulationExecutor(model, tracker)
     executor.simulate(recorder, total_nr_runs=args.max_runs, nr_good_runs=args.nr_finisher_runs, maxsteps=args.maxsteps)
-    recorder.save(args.video_path, f"{videoname}")
+    recorder.save(output_path, f"{videoname}")
 
 if __name__ == "__main__":
     main()
