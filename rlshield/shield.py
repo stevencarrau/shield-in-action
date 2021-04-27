@@ -23,12 +23,12 @@ def compute_winning_region(model, formula, initial=True):
     options = sp.pomdp.IterativeQualitativeSearchOptions()
     model = sp.pomdp.prepare_pomdp_for_qualitative_search_Double(model, formula)
     solver = sp.pomdp.create_iterative_qualitative_search_solver_Double(model, formula, options)
-    logger.debug("compute winning region...")
+    logger.info("compute winning region...")
     if initial:
         solver.compute_winning_policy_for_initial_states(100)
     else:
         solver.compute_winning_region(100)
-    logger.debug("done.")
+    logger.info("done.")
     return solver.last_winning_region
 
 def construct_otf_shield(model, winning_region):
@@ -52,8 +52,8 @@ experiment_to_grid_model_names = {
 }
 
 def main():
-    parser = argparse.ArgumentParser(description='Starter project for the shielded POMDP simulator.')
-    parser.add_argument('--grid-model', '-m', help='Model from the gridworld-by-storm visualisation set', required=True)
+    parser = argparse.ArgumentParser(description='The shielded POMDP simulator.')
+    parser.add_argument('--grid-model', '-m', help=f'Model from the gridworld-by-storm visualisation set, choose from {str(experiment_to_grid_model_names.keys())}', required=True)
     parser.add_argument('--constants', '-c', help="Constants to select the instance of the model")
     parser.add_argument('--load-winning-region', '-wr', help="Load a winning region")
     parser.add_argument('--maxsteps', '-s', help="Maximal number of steps", type=int, default=100)
@@ -111,7 +111,7 @@ def main():
     logger.info("Construct POMDP representation...")
     model = build_pomdp(prism_program, raw_formula)
     model = sp.pomdp.make_canonic(model)
-    print(model)
+    logger.info(model)
     #if model.hash() != hash:
     #    raise RuntimeError("Winning Region does not agree with Model")
 
