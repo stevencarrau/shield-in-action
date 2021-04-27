@@ -51,10 +51,19 @@ experiment_to_grid_model_names = {
     'rocks': models.rocks
 }
 
+class ManualInput:
+    def __init__(self, path, prop, constants):
+        self.path = path
+        self.properties = [prop]
+        self.constants = constants
+
 def main():
     parser = argparse.ArgumentParser(description='The shielded POMDP simulator.')
-    parser.add_argument('--grid-model', '-m', help=f'Model from the gridworld-by-storm visualisation set, choose from {str(experiment_to_grid_model_names.keys())}', required=True)
-    parser.add_argument('--constants', '-c', help="Constants to select the instance of the model")
+    model_group = parser.add_mutually_exclusive_group(required=True)
+    model_group.add_argument('--grid-model', '-m', help=f'Model from the gridworld-by-storm visualisation set, choose from {str(experiment_to_grid_model_names.keys())}')
+    model_group.add_argument('--prism', help="Specify model from prism file")
+    parser.add_argument('--prop', help='Specify property string directly')
+    parser.add_argument('--constants', '-c', help="Constants to select the instance of the model", default="")
     parser.add_argument('--load-winning-region', '-wr', help="Load a winning region")
     parser.add_argument('--maxsteps', '-s', help="Maximal number of steps", type=int, default=100)
     #parser.add_argument('--maxrendering', '-r', help='Maximal length of a rendering', type=int, default=100)
@@ -73,14 +82,32 @@ def main():
     logging.getLogger("matplotlib").setLevel(logging.INFO)
     #logging.getLogger("rlshield.model_simulator").setLevel(logging.DEBUG)
 
+    if args.prism and not args.prop:
+        raise RuntimeError("Prism models require setting the property via --prop")
+    if args.grid_model and args.prop:
+        raise RuntimeError("Properties cannot be set manually when using the gridstorm models")
+
+    if args.video_path is not None and not os.path.isdir(args.video_path):
+        raise RuntimeError(f"Video path {args.video_path} not known!")
+    if args.stats_path is not None and not os.path.isdir(args.stats_path):
+        raise RuntimeError(f"Stats path {args.stats_path} not known!")
+
+    if args.video_path and not args.grid_model:
+        raise RuntimeError("Rendering is only supported for gridstorm models!")
+
     random.seed(args.seed)
-    logger.info("Look up problem definition....")
-    model = experiment_to_grid_model_names[args.grid_model]
-    model_constants = list(inspect.signature(model).parameters.keys())
-    if args.constants is None and len(model_constants) > 0:
-        raise RuntimeError("Model constants {} defined, but not given by command line".format(",".join(model_constants)))
-    constants = dict(item.split('=') for item in args.constants.split(","))
-    input = model(**constants)
+    if args.grid_model:
+        logger.info("Look up problem definition....")
+        model = experiment_to_grid_model_names[args.grid_model]
+        model_constants = list(inspect.signature(model).parameters.keys())
+        if args.constants is None and len(model_constants) > 0:
+            raise RuntimeError("Model constants {} defined, but not given by command line".format(",".join(model_constants)))
+        constants = dict(item.split('=') for item in args.constants.split(","))
+        input = model(**constants)
+    else:
+        input = ManualInput(args.prism, args.prop, args.constants)
+        constants = dict(item.split('=') for item in args.constants.split(","))
+
 
     if args.load_winning_region:
         logger.info("Load winning region...")
@@ -94,11 +121,6 @@ def main():
     else:
         winning_region = None
         compute_shield = not args.noshield
-
-    if args.video_path is not None and not os.path.isdir(args.video_path):
-        raise RuntimeError(f"Video path {args.video_path} not known!")
-    if args.stats_path is not None and not os.path.isdir(args.stats_path):
-        raise RuntimeError(f"Stats path {args.stats_path} not known!")
 
     initial = True
     logger.info("Loading problem definition....")
@@ -150,6 +172,7 @@ def main():
         output_path = args.stats_path
     else:
         logger.info("No video path set, rendering disabled.")
+        output_path = None
         recorder = LoggingRecorder(only_keep_finishers=args.finishers_only)
 
     executor = SimulationExecutor(model, tracker)
