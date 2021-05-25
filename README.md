@@ -104,12 +104,12 @@ Storm gives the following internal IDs to states:
 ```
 Running 
 ```
-python rlshield/shield.py --prism examples/maze2.prism --prop "Pmax=? [\!\"bad\" U \"goal\"]" --constants "sl=0.3" -N 5 --noshield
+python rlshield/shield.py --prism examples/maze2.prism --prop "Pmax=? [!\"bad\" U \"goal\"]" --constants "sl=0.3" -N 5 --noshield
 ```
 will show a series of traces. Some of these traces do indeed visit states 12 or 14.
  
 Running 
 ```
-python rlshield/shield.py --prism examples/maze2.prism --prop "Pmax=? [\!\"bad\" U \"goal\"]" --constants "sl=0.3" -N 5
+python rlshield/shield.py --prism examples/maze2.prism --prop "Pmax=? [!\"bad\" U \"goal\"]" --constants "sl=0.3" -N 5
 ```
 shows that these states are no longer visited. 
