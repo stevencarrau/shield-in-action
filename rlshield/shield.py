@@ -1,4 +1,6 @@
 import argparse
+import copy
+
 import stormpy as sp
 import stormpy.examples
 import stormpy.examples.files
@@ -8,9 +10,15 @@ import random
 import os.path
 import inspect
 
-from rlshield.noshield import NoShield
-from rlshield.recorder import LoggingRecorder, VideoRecorder, StatsRecorder
-from rlshield.model_simulator import SimulationExecutor, Tracker
+# from rlshield.noshield import NoShield
+# from rlshield.recorder import LoggingRecorder, VideoRecorder, StatsRecorder
+# from rlshield.model_simulator import SimulationExecutor, Tracker
+from noshield import NoShield
+from recorder import LoggingRecorder, VideoRecorder, StatsRecorder
+from model_simulator import TF_Environment, Tracker
+import matplotlib.pyplot as plt
+
+
 
 from gridstorm.plotter import Plotter
 import gridstorm.models as models
@@ -39,6 +47,7 @@ def build_pomdp(program, formula):
     options.set_build_state_valuations()
     options.set_build_choice_labels()
     options.set_build_all_labels()
+    options.set_build_all_reward_models()
     logger.debug("Start building the POMDP")
     return sp.build_sparse_model_with_options(program, options)
 
@@ -104,6 +113,7 @@ def main():
             raise RuntimeError("Model constants {} defined, but not given by command line".format(",".join(model_constants)))
         constants = dict(item.split('=') for item in args.constants.split(","))
         input = model(**constants)
+        # input.properties.append("Rmin=? [F \"goal\"]")
     else:
         input = ManualInput(args.prism, args.prop, args.constants)
         constants = dict(item.split('=') for item in args.constants.split(","))
@@ -159,6 +169,7 @@ def main():
             videoname = f"{args.grid_model}-{constant_values}-noshield"
 
     tracker = Tracker(model, otf_shield)
+    noshield_tracker = Tracker(model,NoShield)
     if args.video_path:
         renderer = Plotter(prism_program, input.annotations, model)
         if input.ego_icon is not None:
@@ -175,9 +186,20 @@ def main():
         output_path = None
         recorder = LoggingRecorder(only_keep_finishers=args.finishers_only)
 
-    executor = SimulationExecutor(model, tracker)
-    executor.simulate(recorder, total_nr_runs=args.max_runs, nr_good_runs=args.nr_finisher_runs, maxsteps=args.maxsteps)
-    recorder.save(output_path, f"{videoname}")
+
+
+    executor_no_shield = TF_Environment(model,noshield_tracker,obs_length=1)
+    # test_obs = model.observation_valuations.get_json(50)
+    G0_no_shield = executor_no_shield.simulate_deep_RL(recorder, total_nr_runs=9900, nr_good_runs=args.nr_finisher_runs,
+                                          maxsteps=args.maxsteps)
+    executor_shield = TF_Environment(model, tracker,obs_length=1)
+    G0 = executor_shield.simulate_deep_RL(recorder,total_nr_runs=9900, nr_good_runs=args.nr_finisher_runs, maxsteps=args.maxsteps)
+
+    # executor.simulate(recorder, total_nr_runs=args.max_runs, nr_good_runs=args.nr_finisher_runs, maxsteps=args.maxsteps)
+    # recorder.save(output_path, f"{videoname}")
+    plt.plot(G0)
+    plt.plot(G0_no_shield)
+    plt.savefig('DQN.png')
 
 if __name__ == "__main__":
     main()
