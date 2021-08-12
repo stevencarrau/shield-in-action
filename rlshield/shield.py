@@ -1,6 +1,7 @@
 import argparse
 import copy
 
+import numpy as np
 import stormpy as sp
 import stormpy.examples
 import stormpy.examples.files
@@ -15,7 +16,9 @@ import inspect
 # from rlshield.model_simulator import SimulationExecutor, Tracker
 from noshield import NoShield
 from recorder import LoggingRecorder, VideoRecorder, StatsRecorder
-from model_simulator import TF_Environment, Tracker
+from model_simulator import Tracker
+from model_simulator import SimulationExecutor
+from rl_simulator import TF_Environment
 import matplotlib.pyplot as plt
 
 
@@ -48,6 +51,7 @@ def build_pomdp(program, formula):
     options.set_build_choice_labels()
     options.set_build_all_labels()
     options.set_build_all_reward_models()
+    options.set_build_observation_valuations()
     logger.debug("Start building the POMDP")
     return sp.build_sparse_model_with_options(program, options)
 
@@ -132,7 +136,7 @@ def main():
         winning_region = None
         compute_shield = not args.noshield
 
-    initial = True
+    initial = False
     logger.info("Loading problem definition....")
     prism_program = sp.parse_prism_program(input.path)
     prop = sp.parse_properties_for_prism_program(input.properties[0], prism_program)[0]
@@ -169,7 +173,7 @@ def main():
             videoname = f"{args.grid_model}-{constant_values}-noshield"
 
     tracker = Tracker(model, otf_shield)
-    noshield_tracker = Tracker(model,NoShield)
+    noshield_tracker = Tracker(model,NoShield())
     if args.video_path:
         renderer = Plotter(prism_program, input.annotations, model)
         if input.ego_icon is not None:
@@ -187,19 +191,15 @@ def main():
         recorder = LoggingRecorder(only_keep_finishers=args.finishers_only)
 
 
-
-    executor_no_shield = TF_Environment(model,noshield_tracker,obs_length=1)
-    # test_obs = model.observation_valuations.get_json(50)
-    G0_no_shield = executor_no_shield.simulate_deep_RL(recorder, total_nr_runs=9900, nr_good_runs=args.nr_finisher_runs,
-                                          maxsteps=args.maxsteps)
-    executor_shield = TF_Environment(model, tracker,obs_length=1)
-    G0 = executor_shield.simulate_deep_RL(recorder,total_nr_runs=9900, nr_good_runs=args.nr_finisher_runs, maxsteps=args.maxsteps)
-
-    # executor.simulate(recorder, total_nr_runs=args.max_runs, nr_good_runs=args.nr_finisher_runs, maxsteps=args.maxsteps)
+    # executor = SimulationExecutor(model, tracker)
+    # executor.simulate(recorder, total_nr_runs=1, nr_good_runs=1, maxsteps=args.maxsteps)
     # recorder.save(output_path, f"{videoname}")
-    plt.plot(G0)
-    plt.plot(G0_no_shield)
-    plt.savefig('DQN.png')
+
+    executor = TF_Environment(model, tracker,obs_length=1,maxsteps=args.maxsteps)
+    eval_executor = TF_Environment(model,tracker,obs_length=1,maxsteps=args.maxsteps)
+    G0 = executor.simulate_deep_RL(recorder,total_nr_runs=10000, nr_good_runs=args.nr_finisher_runs, maxsteps=args.maxsteps,eval_env= eval_executor)
+    np.savetxt(f"{output_path}/{videoname}.csv",np.array(G0),delimiter=',')
+    recorder.save(output_path, f"{videoname}")
 
 if __name__ == "__main__":
     main()

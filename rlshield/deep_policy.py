@@ -6,6 +6,7 @@ from tf_agents.policies import tf_policy
 import numpy as np
 from tf_agents.replay_buffers import episodic_replay_buffer
 from itertools import chain
+from tf_agents.networks import actor_distribution_network
 
 
 def dense_layer(num_units):
@@ -25,7 +26,11 @@ class DeepAgent(tf_agents.agents.dqn.dqn_agent.DqnAgent):
         q_net = tf_agents.networks.sequential.Sequential(dense_layers + [q_values_layer])
         optimizer = tf.keras.optimizers.Adam(learning_rate=alpha)
         train_step_counter = tf.Variable(0)
-        super().__init__(env.time_step_spec, env.act_spec, q_network=q_net, optimizer=optimizer,td_errors_loss_fn=tf_agents.utils.common.element_wise_squared_loss,train_step_counter=train_step_counter,observation_and_action_constraint_splitter=self.observation_and_action_constraint_splitter,epsilon_greedy=0.25)
+        if type(env.obs_spec) is dict:
+            actor_net = actor_distribution_network.ActorDistributionNetwork(env.obs_spec['obs'],env.act_spec,fc_layer_params=self.fc_layer_params)
+        else:
+            actor_net = actor_distribution_network.ActorDistributionNetwork(env.obs_spec, env.act_spec,fc_layer_params=self.fc_layer_params)
+        super().__init__(env.time_step_spec, env.act_spec, q_network=q_net, optimizer=optimizer,td_errors_loss_fn=tf_agents.utils.common.element_wise_squared_loss,train_step_counter=train_step_counter,observation_and_action_constraint_splitter=self.observation_and_action_constraint_splitter,epsilon_greedy=0.2)
 
     def observation_and_action_constraint_splitter(self,observation):
         return observation['obs'], observation['mask']
