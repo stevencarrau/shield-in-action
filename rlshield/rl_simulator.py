@@ -88,9 +88,10 @@ def record_track(recorder,executor,agent,policy,maxsteps):
     recorder.end_path(finished)
 
 class TF_Environment(SimulationExecutor):
-    def __init__(self,model,shield,obs_length=1,valuations=False,obs_type='STATE_LEVEL',maxsteps=100):
+    def __init__(self,model,shield,obs_length=1,valuations=True,obs_type='STATE_LEVEL',maxsteps=100):
         super().__init__(model,shield)
         self.obs_type = obs_type
+        self.batch_size = 64
         action_spec_count = [self._model.get_nr_available_actions(i) for i in range(1,self._model.nr_states)]
         self.nr_actions = max(action_spec_count)
         self.valuations = valuations
@@ -103,7 +104,7 @@ class TF_Environment(SimulationExecutor):
             obs_shape  =np.array(self.observe()).shape
         self.act_spec = tf_agents.specs.BoundedTensorSpec(dtype='int32', name='action', minimum=0, maximum=self.nr_actions - 1,shape=tf.TensorShape(()))
         self.disc_spec = tf_agents.specs.BoundedTensorSpec(name='discount', dtype='float32', minimum=0, maximum=1,shape=tf.TensorShape(()))
-        self.obs_spec = {'obs': tf_agents.specs.TensorSpec(name='observation', dtype='int32', shape=tf.TensorShape(obs_shape)),'mask': tf_agents.specs.TensorSpec(shape=(), dtype='bool',name='mask')}
+        self.obs_spec = {'obs': tf_agents.specs.TensorSpec(name='observation', dtype='int32', shape=tf.TensorShape(obs_shape)),'mask': tf_agents.specs.TensorSpec(shape=(self.nr_actions,), dtype='bool',name='mask')}
         self.rew_spec = tf_agents.specs.TensorSpec(name='reward', dtype='float32', shape=tf.TensorShape(()))
         self.step_spec = tf_agents.specs.TensorSpec(name='step_type', dtype='int32', shape=tf.TensorShape(()))
         self.time_step_spec = ts.TimeStep(discount=self.disc_spec, observation=self.obs_spec, reward=self.rew_spec, step_type=self.step_spec)
@@ -148,7 +149,7 @@ class TF_Environment(SimulationExecutor):
         mask = np.zeros(shape=(self.nr_actions,),dtype=bool)
         for i in safe_actions:
             mask[i] = True
-        mask = tf.logical_and(tf.ones(shape=(self.nr_actions,),dtype=tf.bool),mask)
+        mask = tf.logical_and(tf.ones(shape=(1,self.nr_actions),dtype=tf.bool),mask)
         # obs_in = []
         # for o_i in range(self.obs_length-1):
         #
@@ -167,14 +168,14 @@ class TF_Environment(SimulationExecutor):
 
     def step(self,action):
         state, rew = self._simulator.step(action)
-        obs = self.observe()
+        self._shield.track(action, self._simulator._report_observation())
+        # obs = self.observe()
         self.step_count += 1
         if (self.is_done() and 'goal' not in self._model.states[state].labels):
             rew[self.cost_ind] += 100
         elif (self.is_done() and 'goal' in self._model.states[state].labels):
             rew[self.gain_ind] += 100
         current_step = self.current_time_step(rew=self.cost_fn(rew))
-        self._shield.track(action, self._simulator._report_observation())
         # self.replay_memory.add(action,self.cost_fn(rew),obs)
         return current_step
 
@@ -195,8 +196,8 @@ class TF_Environment(SimulationExecutor):
             max_length=maxsteps)
         avg_return = compute_avg_return(eval_env, agent,agent.policy,num_eval_episodes,max_steps=maxsteps)
         record_track(recorder, eval_env, agent, agent.policy, maxsteps)
-        collect_data(self, agent,agent.collect_policy, buffer,steps =collect_steps_per_iteration)
-        dataset = buffer.as_dataset(num_parallel_calls=1,sample_batch_size=1,num_steps=2).prefetch(3)
+        collect_data(self, agent,agent.collect_policy, buffer,steps =2)
+        dataset = buffer.as_dataset(num_parallel_calls=1,sample_batch_size=64,num_steps=2).prefetch(3)
         iterator = iter(dataset)
         agent.train = common.function(agent.train)
         returns = [avg_return]
@@ -230,6 +231,11 @@ class TF_Environment(SimulationExecutor):
         else:
             if self.obs_type is 'STATE_LEVEL':
                 return [self._simulator._report_state()]
+            elif self.obs_type is 'BELIEF_SUPPORT':
+                support = np.zeros((self._model.nr_states,),dtype=int)
+                for i in self._shield.list_support():
+                    support[i] = 1
+                return support.tolist()
             else:
                 return [self._simulator._report_observation()]
 

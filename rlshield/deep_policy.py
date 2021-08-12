@@ -30,7 +30,7 @@ class DeepAgent(tf_agents.agents.dqn.dqn_agent.DqnAgent):
             actor_net = actor_distribution_network.ActorDistributionNetwork(env.obs_spec['obs'],env.act_spec,fc_layer_params=self.fc_layer_params)
         else:
             actor_net = actor_distribution_network.ActorDistributionNetwork(env.obs_spec, env.act_spec,fc_layer_params=self.fc_layer_params)
-        super().__init__(env.time_step_spec, env.act_spec, q_network=q_net, optimizer=optimizer,td_errors_loss_fn=tf_agents.utils.common.element_wise_squared_loss,train_step_counter=train_step_counter,observation_and_action_constraint_splitter=self.observation_and_action_constraint_splitter,epsilon_greedy=0.2)
+        super().__init__(env.time_step_spec, env.act_spec, q_network=q_net, optimizer=optimizer,td_errors_loss_fn=tf_agents.utils.common.element_wise_squared_loss,train_step_counter=train_step_counter,observation_and_action_constraint_splitter=self.observation_and_action_constraint_splitter)
 
     def observation_and_action_constraint_splitter(self,observation):
         return observation['obs'], observation['mask']
