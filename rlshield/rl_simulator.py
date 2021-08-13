@@ -88,7 +88,7 @@ def record_track(recorder,executor,agent,policy,maxsteps):
     recorder.end_path(finished)
 
 class TF_Environment(SimulationExecutor):
-    def __init__(self,model,shield,obs_length=1,valuations=True,obs_type='STATE_LEVEL',maxsteps=100):
+    def __init__(self,model,shield,obs_length=1,valuations=False,obs_type='BELIEF_SUPPORT',maxsteps=100):
         super().__init__(model,shield)
         self.obs_type = obs_type
         self.batch_size = 64
@@ -171,25 +171,25 @@ class TF_Environment(SimulationExecutor):
         self._shield.track(action, self._simulator._report_observation())
         # obs = self.observe()
         self.step_count += 1
-        if (self.is_done() and 'goal' not in self._model.states[state].labels):
-            rew[self.cost_ind] += 100
+        if (self.is_done() and 'traps' in self._model.states[state].labels):
+            rew[self.cost_ind] += 1000
         elif (self.is_done() and 'goal' in self._model.states[state].labels):
-            rew[self.gain_ind] += 100
+            rew[self.gain_ind] += 1000
+        elif (self.is_done()):
+            rew[self.cost_ind] += 100
         current_step = self.current_time_step(rew=self.cost_fn(rew))
         # self.replay_memory.add(action,self.cost_fn(rew),obs)
         return current_step
 
-    def simulate_deep_RL(self, recorder, nr_good_runs=1, total_nr_runs=5, maxsteps=30,eval_env=None):
+    def simulate_deep_RL(self, recorder, nr_good_runs=1, total_nr_runs=5, maxsteps=30,eval_env=None,agent_arg='DQN'):
         self.maxsteps = maxsteps
         gamma = 1.0
         alpha = 3e-2
-        mem_size = 1
-        layer_params = (100,)
-        log_interval = 100
+        log_interval = 1000
         num_eval_episodes = 10
-        eval_interval = 1000
+        eval_interval = 10000
         collect_steps_per_iteration = 1
-        agent = DeepAgent(self,alpha,mem_size,layer_params)
+        agent = DeepAgent(self,alpha,agent_arg)
         buffer = tf_uniform_replay_buffer.TFUniformReplayBuffer(
             data_spec=agent.collect_data_spec,
             batch_size=1,
@@ -216,11 +216,11 @@ class TF_Environment(SimulationExecutor):
             # buffer.clear()
 
             if step % log_interval == 0:
-                print('step = {0}: loss = {1}'.format(self.episode_count, train_loss))
+                print('step = {0}: loss = {1}'.format(step, train_loss))
 
             if step % eval_interval == 0:
                 avg_return = compute_avg_return(eval_env, agent, agent.policy, num_eval_episodes,max_steps=maxsteps)
-                print('step = {0}: Average Return = {1}'.format(self.episode_count, avg_return))
+                print('step = {0}: Average Return = {1}'.format(step, avg_return))
                 returns.append(avg_return)
                 record_track(recorder,eval_env,agent,agent.policy,maxsteps)
         return returns

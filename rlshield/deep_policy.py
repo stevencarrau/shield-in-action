@@ -6,34 +6,133 @@ from tf_agents.policies import tf_policy
 import numpy as np
 from tf_agents.replay_buffers import episodic_replay_buffer
 from itertools import chain
-from tf_agents.networks import actor_distribution_network
+from tf_agents.networks import actor_distribution_network,actor_distribution_rnn_network,value_rnn_network,value_network
+
 
 
 def dense_layer(num_units):
     return tf.keras.layers.Dense(num_units,activation=tf.keras.activations.relu,kernel_initializer=tf.keras.initializers.VarianceScaling(scale=2.0, mode='fan_in', distribution='truncated_normal'))
 
+def obs_selector(args='DQN'):
+    if args is 'DQN':
+        return tf_agents.agents.dqn.dqn_agent.DqnAgent
+    elif args is 'PPO':
+        return tf_agents.agents.ppo.ppo_agent.PPOAgent
+    elif args is 'DDPG':
+        return tf_agents.agents.ddpg.ddpg_agent.DdpgAgent
+    elif args is 'REINFORCE':
+        return tf_agents.agents.reinforce.reinforce_agent.ReinforceAgent
+    elif args is 'TD3':
+        return tf_agents.agents.td3.td3_agent.Td3Agent
+    elif args is 'SAC':
+        return tf_agents.agents.sac.sac_agent.SacAgent
 
-class DeepAgent(tf_agents.agents.dqn.dqn_agent.DqnAgent):
-    def __init__(self,env,alpha,mem_size,layer_params):
+
+
+
+class DeepAgent(object):
+    def __init__(self,env,alpha,agent_arg='DQN'):
         self.alpha = alpha
-        self.mem_size = mem_size
-        self.fc_layer_params = layer_params
-        dense_layers = [dense_layer(num_units) for num_units in self.fc_layer_params]
-        q_values_layer = tf.keras.layers.Dense(env.nr_actions, activation=None,
-                                               kernel_initializer=tf.keras.initializers.RandomUniform(minval=-0.03,
-                                                                                                      maxval=0.03),
-                                               bias_initializer=tf.keras.initializers.Constant(-0.2))
-        q_net = tf_agents.networks.sequential.Sequential(dense_layers + [q_values_layer])
-        optimizer = tf.keras.optimizers.Adam(learning_rate=alpha)
-        train_step_counter = tf.Variable(0)
-        if type(env.obs_spec) is dict:
-            actor_net = actor_distribution_network.ActorDistributionNetwork(env.obs_spec['obs'],env.act_spec,fc_layer_params=self.fc_layer_params)
-        else:
-            actor_net = actor_distribution_network.ActorDistributionNetwork(env.obs_spec, env.act_spec,fc_layer_params=self.fc_layer_params)
-        super().__init__(env.time_step_spec, env.act_spec, q_network=q_net, optimizer=optimizer,td_errors_loss_fn=tf_agents.utils.common.element_wise_squared_loss,train_step_counter=train_step_counter,observation_and_action_constraint_splitter=self.observation_and_action_constraint_splitter)
+        self.learning_method(env,agent_arg)
 
     def observation_and_action_constraint_splitter(self,observation):
         return observation['obs'], observation['mask']
+
+    def learning_method(self,env,agent_arg):
+        train_step_counter = tf.Variable(0)
+        optimizer = tf.keras.optimizers.Adam(learning_rate=self.alpha)
+        if agent_arg is 'DQN':
+            layer_params = (100,)
+            self.fc_layer_params = layer_params
+            dense_layers = [dense_layer(num_units) for num_units in self.fc_layer_params]
+            q_values_layer = tf.keras.layers.Dense(env.nr_actions, activation=None,
+                                                   kernel_initializer=tf.keras.initializers.RandomUniform(minval=-0.03,
+                                                                                                          maxval=0.03),
+                                                   bias_initializer=tf.keras.initializers.Constant(-0.2))
+            q_net = tf_agents.networks.sequential.Sequential(dense_layers + [q_values_layer])
+            super().__init__(env.time_step_spec, env.act_spec, q_network=q_net, optimizer=optimizer,
+                             td_errors_loss_fn=tf_agents.utils.common.element_wise_squared_loss,
+                             train_step_counter=train_step_counter,
+                             observation_and_action_constraint_splitter=self.observation_and_action_constraint_splitter)
+
+        elif agent_arg is 'PPO':
+            actor_fc_layers=(200, 100)
+            value_fc_layers=(200, 100)
+            self.fc_layer_params = actor_fc_layers
+            use_rnns=False
+            lstm_size=(20,)
+            if use_rnns:
+                if type(env.obs_spec) is dict:
+                    actor_net = actor_distribution_rnn_network.ActorDistributionRnnNetwork(
+                        env.obs_spec['obs'],
+                        env.action_spec(),
+                        input_fc_layer_params=actor_fc_layers,
+                        output_fc_layer_params=None,
+                        lstm_size=lstm_size)
+                    value_net = value_rnn_network.ValueRnnNetwork(
+                        env.obs_spec['obs'],
+                        input_fc_layer_params=value_fc_layers,
+                        output_fc_layer_params=None)
+                else:
+                    actor_net = actor_distribution_rnn_network.ActorDistributionRnnNetwork(
+                        env.obs_spec,
+                        env.action_spec(),
+                        input_fc_layer_params=actor_fc_layers,
+                        output_fc_layer_params=None,
+                        lstm_size=lstm_size)
+                    value_net = value_rnn_network.ValueRnnNetwork(
+                        env.obs_spec,
+                        input_fc_layer_params=value_fc_layers,
+                        output_fc_layer_params=None)
+
+            else:
+                if type(env.obs_spec) is dict:
+                    actor_net =  actor_distribution_network.ActorDistributionNetwork(
+                        env.obs_spec['obs'],
+                        env.action_spec(),
+                        input_fc_layer_params=actor_fc_layers,
+                        output_fc_layer_params=None,
+                        lstm_size=lstm_size)
+                    value_net = value_network.ValueNetwork(
+                        env.obs_spec['obs'],
+                        input_fc_layer_params=value_fc_layers,
+                        output_fc_layer_params=None)
+                else:
+                    actor_net =  actor_distribution_network.ActorDistributionNetwork(
+                        env.obs_spec,
+                        env.action_spec(),
+                        input_fc_layer_params=actor_fc_layers,
+                        output_fc_layer_params=None,
+                        lstm_size=lstm_size)
+                    value_net = value_network.ValueNetworkk(
+                        env.obs_spec,
+                        input_fc_layer_params=value_fc_layers,
+                        output_fc_layer_params=None)
+            ppo_clip_agent.PPOClipAgent(
+                tf_env.time_step_spec(),
+                tf_env.action_spec(),
+                optimizer,
+                actor_net=actor_net,
+                value_net=value_net,
+                entropy_regularization=0.0,
+                importance_ratio_clipping=0.2,
+                normalize_observations=False,
+                normalize_rewards=False,
+                use_gae=True,
+                num_epochs=num_epochs,
+                debug_summaries=debug_summaries,
+                summarize_grads_and_vars=summarize_grads_and_vars,
+                train_step_counter=global_step)
+            return tf_agents.agents.ppo.ppo_agent.PPOAgent
+        elif agent_arg is 'DDPG':
+            return tf_agents.agents.ddpg.ddpg_agent.DdpgAgent
+        elif agent_arg is 'REINFORCE':
+            return tf_agents.agents.reinforce.reinforce_agent.ReinforceAgent
+        elif agent_arg is 'TD3':
+            return tf_agents.agents.td3.td3_agent.Td3Agent
+        elif agent_arg is 'SAC':
+            return tf_agents.agents.sac.sac_agent.SacAgent
+
 
 class ReplayMemory:
     def __init__(self, config):
