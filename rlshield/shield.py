@@ -197,7 +197,7 @@ def main():
 
     executor = TF_Environment(model, tracker,obs_length=1,maxsteps=args.maxsteps)
     eval_executor = TF_Environment(model,tracker,obs_length=1,maxsteps=args.maxsteps)
-    G0 = executor.simulate_deep_RL(recorder,total_nr_runs=100000, nr_good_runs=args.nr_finisher_runs, maxsteps=args.maxsteps,eval_env= eval_executor,agent_arg='PPO')
+    G0 = executor.simulate_deep_RL(recorder,total_nr_runs=100000, nr_good_runs=args.nr_finisher_runs, maxsteps=args.maxsteps,eval_env= eval_executor,agent_arg='DQN')
     np.savetxt(f"{output_path}/{videoname}.csv",np.array(G0),delimiter=',')
     recorder.save(output_path, f"{videoname}")
 

@@ -11,6 +11,11 @@ from tf_agents.networks import sequential,actor_distribution_network,actor_distr
 from tf_agents.networks.mask_splitter_network import MaskSplitterNetwork
 from tf_agents.agents.ddpg.critic_network import CriticNetwork
 from tf_agents.utils import common
+from tf_agents.networks import encoding_network
+from tf_agents.networks import network
+from tf_agents.networks import utils
+from tf_agents.utils import nest_utils
+
 
 def dense_layer(num_units):
     return tf.keras.layers.Dense(num_units,activation=tf.keras.activations.relu,kernel_initializer=tf.keras.initializers.VarianceScaling(scale=2.0, mode='fan_in', distribution='truncated_normal'))
@@ -42,24 +47,7 @@ class DeepAgent():
         if distribution_out:
             actor_net = actor_distribution_network.ActorDistributionNetwork(env.obs_spec['obs'],env.act_spec,fc_layer_params=actor_fc_layers)
         else:
-            flat_action_spec = tf.nest.flatten(env.act_spec)
-            if len(flat_action_spec) > 1:
-                raise ValueError('Only a single action tensor is supported by this network')
-            flat_action_spec = flat_action_spec[0]
-            dense = functools.partial(tf.keras.layers.Dense,
-                activation=tf.keras.activations.relu,
-                kernel_initializer=tf.compat.v1.variance_scaling_initializer(
-                    scale=1. / 3.0, mode='fan_in', distribution='uniform'))
-            fc_layers = [dense(num_units) for num_units in actor_fc_layers]
-            num_actions = flat_action_spec.shape.num_elements()
-            action_fc_layer = tf.keras.layers.Dense(
-                num_actions,
-                activation=tf.keras.activations.tanh,
-                kernel_initializer=tf.keras.initializers.RandomUniform(
-                    minval=-0.003, maxval=0.003))
-            scaling_layer = tf.keras.layers.Lambda(
-                lambda x: common.scale_to_spec(x, flat_action_spec))
-            actor_net = sequential.Sequential(fc_layers + [action_fc_layer, scaling_layer])
+            actor_net = ActorNetwork(env.obs_spec['obs'],env.act_spec,fc_layer_params=actor_fc_layers)
         return MaskSplitterNetwork(self.observation_and_action_constraint_splitter,actor_net,passthrough_mask=True)
 
 
@@ -143,7 +131,7 @@ class DeepAgent():
             value_net_fc_layers = (100,)
             learning_rate=alpha
             value_estimation_loss_coef = 0.2
-            actor_net = self.create_actor_network(env,actor_fc_layers, env.act_spec,True)
+            actor_net = self.create_actor_network(env,actor_fc_layers,True)
             value_net = self.create_value_network(env,value_net_fc_layers,True)
             self.agent = obs_selector(agent_arg)(
                 env.time_step_spec,
@@ -216,6 +204,66 @@ class DeepAgent():
                 gradient_clipping=None,
                 train_step_counter=train_step_counter)
 
+
+class ActorNetwork(network.Network):
+
+  def __init__(self,
+               observation_spec,
+               action_spec,
+               preprocessing_layers=None,
+               preprocessing_combiner=None,
+               conv_layer_params=None,
+               fc_layer_params=(75, 40),
+               dropout_layer_params=None,
+               activation_fn=tf.keras.activations.relu,
+               enable_last_layer_zero_initializer=False,
+               name='ActorNetwork'):
+    super(ActorNetwork, self).__init__(
+        input_tensor_spec=observation_spec, state_spec=(), name=name)
+
+    self._action_spec = action_spec
+    flat_action_spec = tf.nest.flatten(action_spec)
+    if len(flat_action_spec) > 1:
+      raise ValueError('Only a single action is supported by this network')
+    self._single_action_spec = flat_action_spec[0]
+    if self._single_action_spec.dtype not in [tf.int32, tf.int64]:
+      raise ValueError('Only int actions are supported by this network.')
+
+    kernel_initializer = tf.keras.initializers.VarianceScaling(
+        scale=1. / 3., mode='fan_in', distribution='uniform')
+    self._encoder = encoding_network.EncodingNetwork(
+        observation_spec,
+        preprocessing_layers=preprocessing_layers,
+        preprocessing_combiner=preprocessing_combiner,
+        conv_layer_params=conv_layer_params,
+        fc_layer_params=fc_layer_params,
+        dropout_layer_params=dropout_layer_params,
+        activation_fn=activation_fn,
+        kernel_initializer=kernel_initializer,
+        batch_squash=False)
+
+    initializer = tf.keras.initializers.RandomUniform(
+        minval=-0.003, maxval=0.003)
+
+    self._action_projection_layer = tf.keras.layers.Dense(
+        flat_action_spec[0].shape.num_elements(),
+        activation=tf.keras.activations.tanh,
+        kernel_initializer=initializer,
+        name='action')
+
+  def call(self, observations, step_type=(), network_state=()):
+    outer_rank = nest_utils.get_outer_rank(observations, self.input_tensor_spec)
+    # We use batch_squash here in case the observations have a time sequence
+    # compoment.
+    batch_squash = utils.BatchSquash(outer_rank)
+    observations = tf.nest.map_structure(batch_squash.flatten, observations)
+
+    state, network_state = self._encoder(
+        observations, step_type=step_type, network_state=network_state)
+    actions = self._action_projection_layer(state)
+    actions = common.scale_to_spec(actions, self._single_action_spec)
+    actions = batch_squash.unflatten(actions)
+    return tf.nest.pack_sequence_as(self._action_spec, [actions]), network_state
 
 class ReplayMemory:
     def __init__(self, config):
