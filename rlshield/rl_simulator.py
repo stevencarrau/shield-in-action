@@ -181,7 +181,7 @@ class TF_Environment(SimulationExecutor):
         # self.replay_memory.add(action,self.cost_fn(rew),obs)
         return current_step
 
-    def simulate_deep_RL(self, recorder, nr_good_runs=1, total_nr_runs=5, maxsteps=30,eval_env=None,agent_arg='PPO'):
+    def simulate_deep_RL(self, recorder, nr_good_runs=1, total_nr_runs=5, maxsteps=30,eval_env=None,agent_arg='DQN'):
         self.maxsteps = maxsteps
         gamma = 1.0
         alpha = 3e-2
@@ -197,7 +197,7 @@ class TF_Environment(SimulationExecutor):
         avg_return = compute_avg_return(eval_env, RL_agent.agent,RL_agent.agent.policy,num_eval_episodes,max_steps=maxsteps)
         record_track(recorder, eval_env, RL_agent.agent, RL_agent.agent.policy, maxsteps)
         collect_data(self, RL_agent.agent,RL_agent.agent.collect_policy, buffer,steps =2)
-        dataset = buffer.as_dataset(num_parallel_calls=1,sample_batch_size=64,num_steps=2).prefetch(3)
+        dataset = buffer.as_dataset(num_parallel_calls=1,sample_batch_size=1,num_steps=2).prefetch(3)
         iterator = iter(dataset)
         RL_agent.agent.train = common.function(RL_agent.agent.train)
         returns = [avg_return]
