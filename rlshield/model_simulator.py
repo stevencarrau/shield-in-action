@@ -7,7 +7,7 @@ import stormpy.examples.files
 import stormpy.simulator
 import stormpy.pomdp
 # from reinforce import REINFORCE
-from DQN import DQN
+# from DQN import DQN
 from tf_agents.trajectories import time_step as ts
 from tf_agents.typing import types
 from tf_agents.trajectories import trajectory

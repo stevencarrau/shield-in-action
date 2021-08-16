@@ -181,7 +181,7 @@ class TF_Environment(SimulationExecutor):
         # self.replay_memory.add(action,self.cost_fn(rew),obs)
         return current_step
 
-    def simulate_deep_RL(self, recorder, nr_good_runs=1, total_nr_runs=5, maxsteps=30,eval_env=None,agent_arg='DQN'):
+    def simulate_deep_RL(self, recorder, nr_good_runs=1, total_nr_runs=5, maxsteps=30,eval_env=None,agent_arg='PPO'):
         self.maxsteps = maxsteps
         gamma = 1.0
         alpha = 3e-2
@@ -189,29 +189,29 @@ class TF_Environment(SimulationExecutor):
         num_eval_episodes = 10
         eval_interval = 10000
         collect_steps_per_iteration = 1
-        agent = DeepAgent(self,alpha,agent_arg)
+        RL_agent = DeepAgent(self,alpha,agent_arg)
         buffer = tf_uniform_replay_buffer.TFUniformReplayBuffer(
-            data_spec=agent.collect_data_spec,
+            data_spec=RL_agent.agent.collect_data_spec,
             batch_size=1,
             max_length=maxsteps)
-        avg_return = compute_avg_return(eval_env, agent,agent.policy,num_eval_episodes,max_steps=maxsteps)
-        record_track(recorder, eval_env, agent, agent.policy, maxsteps)
-        collect_data(self, agent,agent.collect_policy, buffer,steps =2)
+        avg_return = compute_avg_return(eval_env, RL_agent.agent,RL_agent.agent.policy,num_eval_episodes,max_steps=maxsteps)
+        record_track(recorder, eval_env, RL_agent.agent, RL_agent.agent.policy, maxsteps)
+        collect_data(self, RL_agent.agent,RL_agent.agent.collect_policy, buffer,steps =2)
         dataset = buffer.as_dataset(num_parallel_calls=1,sample_batch_size=64,num_steps=2).prefetch(3)
         iterator = iter(dataset)
-        agent.train = common.function(agent.train)
+        RL_agent.agent.train = common.function(RL_agent.agent.train)
         returns = [avg_return]
 
         for _ in range(total_nr_runs):
 
             # Collect a few steps using collect_policy and save to the replay buffer.
-            collect_data(self,agent,  agent.collect_policy, buffer, collect_steps_per_iteration)
+            collect_data(self,RL_agent.agent,  RL_agent.agent.collect_policy, buffer, collect_steps_per_iteration)
 
             # Sample a batch of data from the buffer and update the agent's network.
             experience, unused_info = next(iterator)
-            train_loss = agent.train(experience).loss
+            train_loss = RL_agent.agent.train(experience).loss
 
-            step = agent.train_step_counter.numpy()
+            step = RL_agent.agent.train_step_counter.numpy()
             # step = self.episode_count
             # buffer.clear()
 
@@ -219,10 +219,10 @@ class TF_Environment(SimulationExecutor):
                 print('step = {0}: loss = {1}'.format(step, train_loss))
 
             if step % eval_interval == 0:
-                avg_return = compute_avg_return(eval_env, agent, agent.policy, num_eval_episodes,max_steps=maxsteps)
+                avg_return = compute_avg_return(eval_env, RL_agent.agent, RL_agent.agent.policy, num_eval_episodes,max_steps=maxsteps)
                 print('step = {0}: Average Return = {1}'.format(step, avg_return))
                 returns.append(avg_return)
-                record_track(recorder,eval_env,agent,agent.policy,maxsteps)
+                record_track(recorder,eval_env,RL_agent.agent,RL_agent.agent.policy,maxsteps)
         return returns
 
     def observe(self):

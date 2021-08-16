@@ -30,17 +30,18 @@ def obs_selector(args='DQN'):
 
 
 
-class DeepAgent(object):
-    def __init__(self,env,alpha,agent_arg='DQN'):
+class DeepAgent():
+
+    def __init__(self,env,alpha,agent_arg='PPO'):
         self.alpha = alpha
-        self.learning_method(env,agent_arg)
+        self.learning_method(env,alpha,agent_arg)
 
     def observation_and_action_constraint_splitter(self,observation):
         return observation['obs'], observation['mask']
 
-    def learning_method(self,env,agent_arg):
+    def learning_method(self,env,alpha,agent_arg):
         train_step_counter = tf.Variable(0)
-        optimizer = tf.keras.optimizers.Adam(learning_rate=self.alpha)
+        optimizer = tf.keras.optimizers.Adam(learning_rate=alpha)
         if agent_arg is 'DQN':
             layer_params = (100,)
             self.fc_layer_params = layer_params
@@ -50,11 +51,10 @@ class DeepAgent(object):
                                                                                                           maxval=0.03),
                                                    bias_initializer=tf.keras.initializers.Constant(-0.2))
             q_net = tf_agents.networks.sequential.Sequential(dense_layers + [q_values_layer])
-            super().__init__(env.time_step_spec, env.act_spec, q_network=q_net, optimizer=optimizer,
+            self.agent = obs_selector(agent_arg)(env.time_step_spec, env.act_spec, q_network=q_net, optimizer=optimizer,
                              td_errors_loss_fn=tf_agents.utils.common.element_wise_squared_loss,
                              train_step_counter=train_step_counter,
                              observation_and_action_constraint_splitter=self.observation_and_action_constraint_splitter)
-
         elif agent_arg is 'PPO':
             actor_fc_layers=(200, 100)
             value_fc_layers=(200, 100)
@@ -76,7 +76,7 @@ class DeepAgent(object):
                 else:
                     actor_net = actor_distribution_rnn_network.ActorDistributionRnnNetwork(
                         env.obs_spec,
-                        env.action_spec(),
+                        env.act_spec,
                         input_fc_layer_params=actor_fc_layers,
                         output_fc_layer_params=None,
                         lstm_size=lstm_size)
@@ -89,28 +89,22 @@ class DeepAgent(object):
                 if type(env.obs_spec) is dict:
                     actor_net =  actor_distribution_network.ActorDistributionNetwork(
                         env.obs_spec['obs'],
-                        env.action_spec(),
-                        input_fc_layer_params=actor_fc_layers,
-                        output_fc_layer_params=None,
-                        lstm_size=lstm_size)
+                        env.act_spec,
+                        fc_layer_params=actor_fc_layers)
                     value_net = value_network.ValueNetwork(
                         env.obs_spec['obs'],
-                        input_fc_layer_params=value_fc_layers,
-                        output_fc_layer_params=None)
+                        fc_layer_params=value_fc_layers)
                 else:
                     actor_net =  actor_distribution_network.ActorDistributionNetwork(
                         env.obs_spec,
-                        env.action_spec(),
-                        input_fc_layer_params=actor_fc_layers,
-                        output_fc_layer_params=None,
-                        lstm_size=lstm_size)
+                        env.act_spec,
+                        fc_layer_params=actor_fc_layers)
                     value_net = value_network.ValueNetworkk(
                         env.obs_spec,
-                        input_fc_layer_params=value_fc_layers,
-                        output_fc_layer_params=None)
-            ppo_clip_agent.PPOClipAgent(
-                tf_env.time_step_spec(),
-                tf_env.action_spec(),
+                        fc_layer_params=value_fc_layers)
+            self.agent = obs_selector(agent_arg)(
+                env.time_step_spec,
+                env.act_spec,
                 optimizer,
                 actor_net=actor_net,
                 value_net=value_net,
@@ -119,11 +113,8 @@ class DeepAgent(object):
                 normalize_observations=False,
                 normalize_rewards=False,
                 use_gae=True,
-                num_epochs=num_epochs,
-                debug_summaries=debug_summaries,
-                summarize_grads_and_vars=summarize_grads_and_vars,
-                train_step_counter=global_step)
-            return tf_agents.agents.ppo.ppo_agent.PPOAgent
+                observation_and_action_constraint_splitter=self.observation_and_action_constraint_splitter,
+                train_step_counter=train_step_counter)
         elif agent_arg is 'DDPG':
             return tf_agents.agents.ddpg.ddpg_agent.DdpgAgent
         elif agent_arg is 'REINFORCE':
