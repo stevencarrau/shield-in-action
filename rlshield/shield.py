@@ -89,6 +89,11 @@ def main():
     parser.add_argument('--title', help="Title for video")
     parser.add_argument('--logfile', help="File to log to", default="rendering.log")
     parser.add_argument('--noshield', help="Simulate without a shield", action='store_true')
+    parser.add_argument('--obs_level',default='BELIEF_SUPPORT')
+    parser.add_argument('--valuations',default=False)
+    parser.add_argument('--learning_method',default='DQN')
+    parser.add_argument('--eval_iterval',default=100)
+    parser.add_argument('--eval_episodes',default=5)
 
     args = parser.parse_args()
     logging.basicConfig(filename=f'{args.logfile}', filemode='w', level=logging.INFO)
@@ -173,7 +178,6 @@ def main():
             videoname = f"{args.grid_model}-{constant_values}-noshield"
 
     tracker = Tracker(model, otf_shield)
-    noshield_tracker = Tracker(model,NoShield())
     if args.video_path:
         renderer = Plotter(prism_program, input.annotations, model)
         if input.ego_icon is not None:
@@ -194,11 +198,14 @@ def main():
     # executor = SimulationExecutor(model, tracker)
     # executor.simulate(recorder, total_nr_runs=1, nr_good_runs=1, maxsteps=args.maxsteps)
     # recorder.save(output_path, f"{videoname}")
-
-    executor = TF_Environment(model, tracker,obs_length=1,maxsteps=args.maxsteps)
-    eval_executor = TF_Environment(model,tracker,obs_length=1,maxsteps=args.maxsteps)
-    G0 = executor.simulate_deep_RL(recorder,total_nr_runs=100000, nr_good_runs=args.nr_finisher_runs, maxsteps=args.maxsteps,eval_env= eval_executor,agent_arg='DQN')
-    np.savetxt(f"{output_path}/{videoname}.csv",np.array(G0),delimiter=',')
+    obs_type = args.obs_level
+    valuations = args.valuations
+    result_fname = f"_{obs_type}_valuations" if valuations else f"_{obs_type}"
+    executor = TF_Environment(model, tracker,obs_length=1,maxsteps=args.maxsteps,obs_type=obs_type,valuations=valuations)
+    eval_executor = TF_Environment(model,tracker,obs_length=1,maxsteps=args.maxsteps,obs_type=obs_type,valuations=valuations)
+    print("Starting RL:\n")
+    G0 = executor.simulate_deep_RL(recorder,total_nr_runs=20000, eval_interval=args.eval_iterval,eval_episodes=args.eval_episodes, maxsteps=args.maxsteps,eval_env= eval_executor,agent_arg=args.learning_method)
+    np.savetxt(f"{output_path}/{videoname}{result_fname}.csv",np.array(G0),delimiter=' ')
     recorder.save(output_path, f"{videoname}")
 
 if __name__ == "__main__":

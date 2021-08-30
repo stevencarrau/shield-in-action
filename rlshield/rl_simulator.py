@@ -20,6 +20,18 @@ from model_simulator import SimulationExecutor
 import logging
 logger = logging.getLogger(__name__)
 
+def collect_episode(env,policy,num_episodes,buffer):
+    episode_counter = 0
+    env.reset()
+    while episode_counter < num_episodes:
+        time_step = env.current_time_step()
+        action_step = policy.action(time_step)
+        next_time_step = env.step(int(action_step.action))
+        traj = trajectory.from_transition(time_step,action_step,next_time_step)
+        buffer.add_batch(traj)
+        if next_time_step.step_type == ts.StepType.LAST:
+            episode_counter += 1
+
 
 def collect_step(env,agent,policy,buffer):
     time_step = env.current_time_step()
@@ -181,13 +193,13 @@ class TF_Environment(SimulationExecutor):
         # self.replay_memory.add(action,self.cost_fn(rew),obs)
         return current_step
 
-    def simulate_deep_RL(self, recorder, nr_good_runs=1, total_nr_runs=5, maxsteps=30,eval_env=None,agent_arg='DQN'):
+    def simulate_deep_RL(self, recorder, total_nr_runs=5,eval_interval=1000,eval_episodes=10, maxsteps=30,eval_env=None,agent_arg='DQN'):
         self.maxsteps = maxsteps
         gamma = 1.0
         alpha = 3e-2
-        log_interval = 1000
-        num_eval_episodes = 10
-        eval_interval = 10000
+        log_interval = 10
+        num_eval_episodes = eval_episodes
+        eval_interval = eval_interval
         collect_steps_per_iteration = 1
         RL_agent = DeepAgent(self,alpha,agent_arg)
         buffer = tf_uniform_replay_buffer.TFUniformReplayBuffer(
@@ -200,20 +212,28 @@ class TF_Environment(SimulationExecutor):
         dataset = buffer.as_dataset(num_parallel_calls=1,sample_batch_size=64,num_steps=2).prefetch(3)
         iterator = iter(dataset)
         RL_agent.agent.train = common.function(RL_agent.agent.train)
-        returns = [avg_return]
+        returns = [(0,avg_return)]
 
         for _ in range(total_nr_runs):
 
-            # Collect a few steps using collect_policy and save to the replay buffer.
-            collect_data(self,RL_agent.agent,  RL_agent.agent.collect_policy, buffer, collect_steps_per_iteration)
+            # # Collect a few steps using collect_policy and save to the replay buffer.
+            # collect_data(self,RL_agent.agent,  RL_agent.agent.collect_policy, buffer, collect_steps_per_iteration)
+            collect_episode(self,RL_agent.agent.collect_policy,collect_steps_per_iteration,buffer)
+            #
+            # # Sample a batch of data from the buffer and update the agent's network.
 
-            # Sample a batch of data from the buffer and update the agent's network.
-            experience, unused_info = next(iterator)
-            train_loss = RL_agent.agent.train(experience).loss
+            if agent_arg == 'REINFORCE':
+                experience = buffer.gather_all()
+                train_loss = RL_agent.agent.train(experience).loss
+                buffer.clear()
+            else:
+                experience, unused_info = next(iterator)
+                train_loss = RL_agent.agent.train(experience).loss
+
+
 
             step = RL_agent.agent.train_step_counter.numpy()
             # step = self.episode_count
-            # buffer.clear()
 
             if step % log_interval == 0:
                 print('step = {0}: loss = {1}'.format(step, train_loss))
@@ -221,17 +241,17 @@ class TF_Environment(SimulationExecutor):
             if step % eval_interval == 0:
                 avg_return = compute_avg_return(eval_env, RL_agent.agent, RL_agent.agent.policy, num_eval_episodes,max_steps=maxsteps)
                 print('step = {0}: Average Return = {1}'.format(step, avg_return))
-                returns.append(avg_return)
-                record_track(recorder,eval_env,RL_agent.agent,RL_agent.agent.policy,maxsteps)
+                returns.append((step,avg_return))
+                # record_track(recorder,eval_env,RL_agent.agent,RL_agent.agent.policy,maxsteps)
         return returns
 
     def observe(self):
         if self.valuations:
             return np.array(self.get_observation_valuation(),dtype=int)
         else:
-            if self.obs_type is 'STATE_LEVEL':
+            if self.obs_type == 'STATE_LEVEL':
                 return [self._simulator._report_state()]
-            elif self.obs_type is 'BELIEF_SUPPORT':
+            elif self.obs_type == 'BELIEF_SUPPORT':
                 support = np.zeros((self._model.nr_states,),dtype=int)
                 for i in self._shield.list_support():
                     support[i] = 1
@@ -246,15 +266,24 @@ class TF_Environment(SimulationExecutor):
             return -rew_in[0]
 
     def get_observation_valuation(self):
-        if self.obs_type is 'STATE_LEVEL':
-            return [int(self._model.state_valuations.get_json(self._simulator._report_state())[i]) for i in self.keywords]
+        if self.obs_type == 'STATE_LEVEL':
+            return [json_to_int(self._model.state_valuations.get_json(self._simulator._report_state())[i]) for i in self.keywords]
         else:
-            return [int(self._model.observation_valuations.get_json(self._simulator._report_observation())[i]) for i in self.keywords]
+            return [json_to_int(self._model.observation_valuations.get_json(self._simulator._report_observation())[i]) for i in self.keywords]
 
     def get_observation_keywords(self):
-        if self.obs_type is 'STATE_LEVEL':
+        if self.obs_type == 'STATE_LEVEL':
             keywords = set([i[1:-2] for i in str(self._model.state_valuations.get_json(0)).split()[1:-1:2]])
         else:
             keywords = set([i[1:-2] for i in str(self._model.observation_valuations.get_json(0)).split()[1:-1:2]])
-        keywords.remove('start')
+        # if 'start' in keywords:
+        #     keywords.remove('start')
+        # if 'turn' in keywords:
+        #     keywords.remove('turn')
         return keywords
+
+def json_to_int(i):
+    try:
+        return int(i)
+    except:
+        return 0 if i=='false' else 1

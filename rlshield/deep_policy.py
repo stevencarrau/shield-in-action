@@ -15,23 +15,26 @@ from tf_agents.networks import encoding_network
 from tf_agents.networks import network
 from tf_agents.networks import utils
 from tf_agents.utils import nest_utils
+from reinforce import MaskedReinforceAgent
 
 
 def dense_layer(num_units):
     return tf.keras.layers.Dense(num_units,activation=tf.keras.activations.relu,kernel_initializer=tf.keras.initializers.VarianceScaling(scale=2.0, mode='fan_in', distribution='truncated_normal'))
 
 def obs_selector(args='DQN'):
-    if args is 'DQN':
+    if args == 'DQN':
         return tf_agents.agents.dqn.dqn_agent.DqnAgent
-    elif args is 'PPO':
+    elif args == 'DDQN':
+        return tf_agents.agents.dqn.dqn_agent.DdqnAgent
+    elif args == 'PPO':
         return tf_agents.agents.ppo.ppo_agent.PPOAgent
-    elif args is 'DDPG':
+    elif args == 'DDPG':
         return tf_agents.agents.ddpg.ddpg_agent.DdpgAgent
-    elif args is 'REINFORCE':
-        return tf_agents.agents.reinforce.reinforce_agent.ReinforceAgent
-    elif args is 'TD3':
+    elif args == 'REINFORCE':
+        return MaskedReinforceAgent
+    elif args == 'TD3':
         return tf_agents.agents.td3.td3_agent.Td3Agent
-    elif args is 'SAC':
+    elif args == 'SAC':
         return tf_agents.agents.sac.sac_agent.SacAgent
 
 class DeepAgent():
@@ -48,7 +51,7 @@ class DeepAgent():
             actor_net = actor_distribution_network.ActorDistributionNetwork(env.obs_spec['obs'],env.act_spec,fc_layer_params=actor_fc_layers)
         else:
             actor_net = ActorNetwork(env.obs_spec['obs'],env.act_spec,fc_layer_params=actor_fc_layers)
-        return MaskSplitterNetwork(self.observation_and_action_constraint_splitter,actor_net,passthrough_mask=True)
+        return actor_net #MaskSplitterNetwork(self.observation_and_action_constraint_splitter,actor_net,passthrough_mask=True)
 
 
     def create_value_network(self,env,value_net_fc_layers,distribution_out=True):
@@ -56,7 +59,7 @@ class DeepAgent():
             value_net = value_network.ValueNetwork(env.obs_spec['obs'],fc_layer_params=value_net_fc_layers)
         else:
             value_net = value_network.ValueNetwork(env.obs_spec['obs'],fc_layer_params=value_net_fc_layers)
-        return MaskSplitterNetwork(self.observation_and_action_constraint_splitter,value_net,passthrough_mask=True)
+        return value_net #MaskSplitterNetwork(self.observation_and_action_constraint_splitter,value_net,passthrough_mask=True)
 
     def create_critic_network(self,env,obs_fc_layer_units,action_fc_layer_units,joint_fc_layer_units):
         critic_net = CriticNetwork((env.obs_spec['obs'],env.act_spec),observation_fc_layer_params=obs_fc_layer_units,action_fc_layer_params=action_fc_layer_units,joint_fc_layer_params=joint_fc_layer_units)
@@ -65,7 +68,7 @@ class DeepAgent():
     def learning_method(self,env,alpha,agent_arg):
         train_step_counter = tf.Variable(0)
         optimizer = tf.keras.optimizers.Adam(learning_rate=alpha)
-        if agent_arg is 'DQN':
+        if agent_arg == 'DQN':
             layer_params = (100,)
             self.fc_layer_params = layer_params
             dense_layers = [dense_layer(num_units) for num_units in self.fc_layer_params]
@@ -78,7 +81,20 @@ class DeepAgent():
                              td_errors_loss_fn=tf_agents.utils.common.element_wise_squared_loss,
                              train_step_counter=train_step_counter,
                              observation_and_action_constraint_splitter=self.observation_and_action_constraint_splitter)
-        elif agent_arg is 'PPO':
+        elif agent_arg == 'DDQN':
+            layer_params = (100,)
+            self.fc_layer_params = layer_params
+            dense_layers = [dense_layer(num_units) for num_units in self.fc_layer_params]
+            q_values_layer = tf.keras.layers.Dense(env.nr_actions, activation=None,
+                                                   kernel_initializer=tf.keras.initializers.RandomUniform(minval=-0.03,
+                                                                                                          maxval=0.03),
+                                                   bias_initializer=tf.keras.initializers.Constant(-0.2))
+            q_net = tf_agents.networks.sequential.Sequential(dense_layers + [q_values_layer])
+            self.agent = obs_selector(agent_arg)(env.time_step_spec, env.act_spec, q_network=q_net, optimizer=optimizer,
+                                                 td_errors_loss_fn=tf_agents.utils.common.element_wise_squared_loss,
+                                                 train_step_counter=train_step_counter,
+                                                 observation_and_action_constraint_splitter=self.observation_and_action_constraint_splitter)
+        elif agent_arg == 'PPO':
             actor_fc_layers=(200, 100)
             value_fc_layers=(200, 100)
             self.fc_layer_params = actor_fc_layers
@@ -98,7 +114,7 @@ class DeepAgent():
                 normalize_rewards=False,
                 use_gae=True,
                 train_step_counter=train_step_counter)
-        elif agent_arg is 'DDPG':
+        elif agent_arg == 'DDPG':
             actor_fc_layers = (400, 300)
             critic_obs_fc_layers = (400,)
             critic_action_fc_layers = None
@@ -126,7 +142,7 @@ class DeepAgent():
                 dqda_clipping=None,
                 td_errors_loss_fn=td_errors_loss_fn,
                 train_step_counter=train_step_counter)
-        elif agent_arg is 'REINFORCE':
+        elif agent_arg == 'REINFORCE':
             actor_fc_layers = (100,)
             value_net_fc_layers = (100,)
             learning_rate=alpha
@@ -141,9 +157,10 @@ class DeepAgent():
                 value_estimation_loss_coef=value_estimation_loss_coef,
                 gamma=1.0,
                 optimizer=tf.compat.v1.train.AdamOptimizer(learning_rate=learning_rate),
-                train_step_counter=train_step_counter)
+                train_step_counter=train_step_counter,
+                observation_and_action_constraint_splitter=self.observation_and_action_constraint_splitter)
 
-        elif agent_arg is 'TD3':
+        elif agent_arg == 'TD3':
             actor_fc_layers = (400, 300)
             critic_obs_fc_layers = (400,)
             critic_action_fc_layers = None
@@ -171,7 +188,7 @@ class DeepAgent():
                 actor_update_period=actor_update_period,
                 train_step_counter=train_step_counter,
             )
-        elif agent_arg is 'SAC':
+        elif agent_arg == 'SAC':
             actor_fc_layers = (256, 256)
             critic_obs_fc_layers = None
             critic_action_fc_layers = None
@@ -324,3 +341,5 @@ class ReplayMemory:
     #         action = tf.random.categorical(logits=act_logits, num_samples=1, dtype=None, seed=None,
     #                                            name=None).numpy()[0, 0]
     #     return tf_agents.trajectories.policy_step.PolicyStep(action=tf.constant([action]))
+
+
