@@ -16,6 +16,8 @@ from tf_agents.networks import network
 from tf_agents.networks import utils
 from tf_agents.utils import nest_utils
 from reinforce import MaskedReinforceAgent
+from sac import DiscreteSacAgent,DiscreteSacCriticNetwork
+from ppo import PPOAgent
 
 
 def dense_layer(num_units):
@@ -27,7 +29,7 @@ def obs_selector(args='DQN'):
     elif args == 'DDQN':
         return tf_agents.agents.dqn.dqn_agent.DdqnAgent
     elif args == 'PPO':
-        return tf_agents.agents.ppo.ppo_agent.PPOAgent
+        return PPOAgent
     elif args == 'DDPG':
         return tf_agents.agents.ddpg.ddpg_agent.DdpgAgent
     elif args == 'REINFORCE':
@@ -35,7 +37,7 @@ def obs_selector(args='DQN'):
     elif args == 'TD3':
         return tf_agents.agents.td3.td3_agent.Td3Agent
     elif args == 'SAC':
-        return tf_agents.agents.sac.sac_agent.SacAgent
+        return DiscreteSacAgent
 
 class DeepAgent():
 
@@ -62,8 +64,8 @@ class DeepAgent():
         return value_net #MaskSplitterNetwork(self.observation_and_action_constraint_splitter,value_net,passthrough_mask=True)
 
     def create_critic_network(self,env,obs_fc_layer_units,action_fc_layer_units,joint_fc_layer_units):
-        critic_net = CriticNetwork((env.obs_spec['obs'],env.act_spec),observation_fc_layer_params=obs_fc_layer_units,action_fc_layer_params=action_fc_layer_units,joint_fc_layer_params=joint_fc_layer_units)
-        return MaskSplitterNetwork(self.observation_and_action_constraint_splitter,critic_net,passthrough_mask=True)
+        critic_net = DiscreteSacCriticNetwork((env.obs_spec['obs'],env.act_spec),observation_fc_layer_params=obs_fc_layer_units,action_fc_layer_params=action_fc_layer_units,joint_fc_layer_params=joint_fc_layer_units)
+        return critic_net # MaskSplitterNetwork(self.observation_and_action_constraint_splitter,critic_net,passthrough_mask=True)
 
     def learning_method(self,env,alpha,agent_arg):
         train_step_counter = tf.Variable(0)
@@ -113,7 +115,7 @@ class DeepAgent():
                 normalize_observations=False,
                 normalize_rewards=False,
                 use_gae=True,
-                train_step_counter=train_step_counter)
+                train_step_counter=train_step_counter,observation_and_action_constraint_splitter=self.observation_and_action_constraint_splitter)
         elif agent_arg == 'DDPG':
             actor_fc_layers = (400, 300)
             critic_obs_fc_layers = (400,)
@@ -219,7 +221,7 @@ class DeepAgent():
                 gamma=1.0,
                 reward_scale_factor=reward_scale_factor,
                 gradient_clipping=None,
-                train_step_counter=train_step_counter)
+                train_step_counter=train_step_counter,observation_and_action_constraint_splitter=self.observation_and_action_constraint_splitter)
 
 
 class ActorNetwork(network.Network):

@@ -91,7 +91,7 @@ def main():
     parser.add_argument('--noshield', help="Simulate without a shield", action='store_true')
     parser.add_argument('--obs_level',default='BELIEF_SUPPORT')
     parser.add_argument('--valuations',default=False)
-    parser.add_argument('--learning_method',default='DQN')
+    parser.add_argument('--learning_method',default='SAC')
     parser.add_argument('--eval_iterval',default=100)
     parser.add_argument('--eval_episodes',default=5)
 

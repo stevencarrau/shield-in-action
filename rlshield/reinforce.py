@@ -299,7 +299,7 @@ class MaskedReinforceAgent(tf_agent.TFAgent):
     value_preds = None
 
     if self._baseline:
-      value_preds, _ = self._value_network(time_steps.observation,
+      value_preds, _ = self._value_network(time_steps.observation['obs'],
                                            time_steps.step_type,
                                            training=True)
       if self._debug_summaries:
