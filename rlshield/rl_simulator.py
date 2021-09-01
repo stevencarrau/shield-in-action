@@ -193,7 +193,8 @@ class TF_Environment(SimulationExecutor):
         # self.replay_memory.add(action,self.cost_fn(rew),obs)
         return current_step
 
-    def simulate_deep_RL(self, recorder, total_nr_runs=5,eval_interval=1000,eval_episodes=10, maxsteps=30,eval_env=None,agent_arg='DQN'):
+    def simulate_deep_RL(self, recorder, total_nr_runs=5,eval_interval=1000,eval_episodes=10, maxsteps=30,eval_env=None,agent_arg='DQN',log_name=None):
+        logfile = open(log_name,"w")
         self.maxsteps = maxsteps
         gamma = 1.0
         alpha = 3e-2
@@ -242,7 +243,9 @@ class TF_Environment(SimulationExecutor):
                 avg_return = compute_avg_return(eval_env, RL_agent.agent, RL_agent.agent.policy, num_eval_episodes,max_steps=maxsteps)
                 print('step = {0}: Average Return = {1}'.format(step, avg_return))
                 returns.append((step,avg_return))
+                logfile.write('{0} {1}\n'.format(step,avg_return))
         record_track(recorder,eval_env,RL_agent.agent,RL_agent.agent.policy,maxsteps)
+        logfile.close()
         return returns
 
     def observe(self):
