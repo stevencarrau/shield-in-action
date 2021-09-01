@@ -80,7 +80,7 @@ def main():
     parser.add_argument('--load-winning-region', '-wr', help="Load a winning region")
     parser.add_argument('--maxsteps', '-s', help="Maximal number of steps", type=int, default=100)
     #parser.add_argument('--maxrendering', '-r', help='Maximal length of a rendering', type=int, default=100)
-    parser.add_argument('--max-runs', '-NN', help="Number of runs", type=int, default=10000000)
+    parser.add_argument('--max-runs', '-NN', help="Number of runs", type=int, default=10000)
     parser.add_argument('--nr-finisher-runs', '-N', type=int, default=1)
     parser.add_argument('--video-path', help="Path for the video")
     parser.add_argument('--stats-path', help="Path for recording stats")
@@ -91,9 +91,9 @@ def main():
     parser.add_argument('--noshield', help="Simulate without a shield", action='store_true')
     parser.add_argument('--obs_level',default='BELIEF_SUPPORT')
     parser.add_argument('--valuations',default=False)
-    parser.add_argument('--learning_method',default='SAC')
-    parser.add_argument('--eval_iterval',default=100)
-    parser.add_argument('--eval_episodes',default=5)
+    parser.add_argument('--learning_method',default='PPO')
+    parser.add_argument('--eval-interval', type=int,default=100)
+    parser.add_argument('--eval-episodes', type=int,default=5)
 
     args = parser.parse_args()
     logging.basicConfig(filename=f'{args.logfile}', filemode='w', level=logging.INFO)
@@ -204,9 +204,9 @@ def main():
     executor = TF_Environment(model, tracker,obs_length=1,maxsteps=args.maxsteps,obs_type=obs_type,valuations=valuations)
     eval_executor = TF_Environment(model,tracker,obs_length=1,maxsteps=args.maxsteps,obs_type=obs_type,valuations=valuations)
     print("Starting RL:\n")
-    G0 = executor.simulate_deep_RL(recorder,total_nr_runs=20000, eval_interval=args.eval_iterval,eval_episodes=args.eval_episodes, maxsteps=args.maxsteps,eval_env= eval_executor,agent_arg=args.learning_method)
+    G0 = executor.simulate_deep_RL(recorder,total_nr_runs=args.max_runs, eval_interval=args.eval_interval,eval_episodes=args.eval_episodes, maxsteps=args.maxsteps,eval_env= eval_executor,agent_arg=args.learning_method)
     np.savetxt(f"{output_path}/{videoname}{result_fname}.csv",np.array(G0),delimiter=' ')
-    recorder.save(output_path, f"{videoname}")
+    recorder.save(output_path, f"{videoname}{result_fname}")
 
 if __name__ == "__main__":
     main()
