@@ -209,6 +209,7 @@ class TF_Environment(SimulationExecutor):
             max_length=maxsteps)
         avg_return = compute_avg_return(eval_env, RL_agent.agent,RL_agent.agent.policy,num_eval_episodes,max_steps=maxsteps)
         record_track(recorder, eval_env, RL_agent.agent, RL_agent.agent.policy, maxsteps)
+        self.reset()
         collect_data(self, RL_agent.agent,RL_agent.agent.collect_policy, buffer,steps =2)
         dataset = buffer.as_dataset(num_parallel_calls=1,sample_batch_size=64,num_steps=2).prefetch(3)
         iterator = iter(dataset)
@@ -233,7 +234,7 @@ class TF_Environment(SimulationExecutor):
 
 
 
-            step = RL_agent.agent.train_step_counter.numpy()
+            step = int(RL_agent.agent.train_step_counter.numpy()/25) if agent_arg=='PPO' else RL_agent.agent.train_step_counter.numpy()
             # step = self.episode_count
 
             if step % log_interval == 0:

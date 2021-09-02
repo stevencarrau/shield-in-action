@@ -80,7 +80,7 @@ def main():
     parser.add_argument('--load-winning-region', '-wr', help="Load a winning region")
     parser.add_argument('--maxsteps', '-s', help="Maximal number of steps", type=int, default=100)
     #parser.add_argument('--maxrendering', '-r', help='Maximal length of a rendering', type=int, default=100)
-    parser.add_argument('--max-runs', '-NN', help="Number of runs", type=int, default=10000)
+    parser.add_argument('--max-runs', '-NN', help="Number of runs", type=int, default=5000)
     parser.add_argument('--nr-finisher-runs', '-N', type=int, default=1)
     parser.add_argument('--video-path', help="Path for the video")
     parser.add_argument('--stats-path', help="Path for recording stats")
