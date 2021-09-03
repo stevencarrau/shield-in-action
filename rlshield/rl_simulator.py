@@ -219,8 +219,8 @@ class TF_Environment(SimulationExecutor):
         for _ in range(total_nr_runs):
 
             # # Collect a few steps using collect_policy and save to the replay buffer.
-            # collect_data(self,RL_agent.agent,  RL_agent.agent.collect_policy, buffer, collect_steps_per_iteration)
-            collect_episode(self,RL_agent.agent.collect_policy,collect_steps_per_iteration,buffer)
+            collect_data(self,RL_agent.agent,  RL_agent.agent.collect_policy, buffer, collect_steps_per_iteration)
+            # collect_episode(self,RL_agent.agent.collect_policy,collect_steps_per_iteration,buffer)
             #
             # # Sample a batch of data from the buffer and update the agent's network.
 
