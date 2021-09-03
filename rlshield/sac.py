@@ -18,12 +18,12 @@ import tensorflow as tf  # pylint: disable=g-explicit-tensorflow-version-import
 import tensorflow_probability as tfp
 from six.moves import zip
 from tf_agents.agents import data_converter, tf_agent
-from tf_agents.networks import encoding_network, network, utils
+from tf_agents.networks import encoding_network, network, utils,categorical_projection_network,lstm_encoding_network,normal_projection_network
 from tf_agents.policies import actor_policy, tf_policy
 from tf_agents.trajectories import time_step as ts
 from tf_agents.typing import types
 from tf_agents.utils import common, eager_utils, nest_utils, object_identity
-
+from tf_agents.specs import tensor_spec
 
 SacLossInfo = collections.namedtuple(
     'SacLossInfo', ('critic_loss', 'actor_loss', 'alpha_loss'))
@@ -64,7 +64,6 @@ class DiscreteSacAgent(tf_agent.TFAgent):
                  observation_and_action_constraint_splitter: Optional[types.Splitter] = None,
                  name: Optional[Text] = None):
         """Creates a SAC Agent.
-
         Args:
           time_step_spec: A `TimeStep` spec of the expected time_steps.
           action_spec: A nest of BoundedTensorSpec representing the actions.
@@ -122,28 +121,17 @@ class DiscreteSacAgent(tf_agent.TFAgent):
             that name. Defaults to the class name.
         """
         tf.Module.__init__(self, name=name)
-        self._observation_and_action_constraint_splitter = (observation_and_action_constraint_splitter)
-        net_observation_spec = time_step_spec.observation
-        if observation_and_action_constraint_splitter:
-            net_observation_spec, _ = observation_and_action_constraint_splitter(net_observation_spec)
-        flat_action_spec = tf.nest.flatten(action_spec)
-        self._num_actions = np.sum([
-            single_spec.maximum-single_spec.minimum+1
-            for single_spec in flat_action_spec
-        ])
 
         self._check_action_spec(action_spec)
+        self._observation_and_action_constraint_splitter = (observation_and_action_constraint_splitter)
+        net_observation_spec = time_step_spec.observation
+
+
+        if observation_and_action_constraint_splitter:
+            net_observation_spec, _ = observation_and_action_constraint_splitter(net_observation_spec)
+        critic_spec = (net_observation_spec, action_spec)
 
         self._critic_network_1 = critic_network
-        self._critic_network_1.create_variables(
-            net_observation_spec)
-        if target_critic_network:
-            target_critic_network.create_variables(
-                net_observation_spec)
-        self._target_critic_network_1 = (
-            common.maybe_copy_target_network_with_checks(self._critic_network_1,
-                                                         target_critic_network,
-                                                         'TargetCriticNetwork1'))
 
         if critic_network_2 is not None:
             self._critic_network_2 = critic_network_2
@@ -151,15 +139,30 @@ class DiscreteSacAgent(tf_agent.TFAgent):
             self._critic_network_2 = critic_network.copy(name='CriticNetwork2')
             # Do not use target_critic_network_2 if critic_network_2 is None.
             target_critic_network_2 = None
-        self._critic_network_2.create_variables(
-            net_observation_spec)
+
+        # Wait until critic_network_2 has been copied from critic_network_1 before
+        # creating variables on both.
+        self._critic_network_1.create_variables(critic_spec)
+        self._critic_network_2.create_variables(critic_spec)
+
+        if target_critic_network:
+            target_critic_network.create_variables(critic_spec)
+
+        self._target_critic_network_1 = (
+            common.maybe_copy_target_network_with_checks(
+                self._critic_network_1,
+                target_critic_network,
+                input_spec=critic_spec,
+                name='TargetCriticNetwork1'))
+
         if target_critic_network_2:
-            target_critic_network_2.create_variables(
-                net_observation_spec)
+            target_critic_network_2.create_variables(critic_spec)
         self._target_critic_network_2 = (
-            common.maybe_copy_target_network_with_checks(self._critic_network_2,
-                                                         target_critic_network_2,
-                                                         'TargetCriticNetwork2'))
+            common.maybe_copy_target_network_with_checks(
+                self._critic_network_2,
+                target_critic_network_2,
+                input_spec=critic_spec,
+                name='TargetCriticNetwork2'))
 
         if actor_network:
             actor_network.create_variables(net_observation_spec)
@@ -169,17 +172,13 @@ class DiscreteSacAgent(tf_agent.TFAgent):
             time_step_spec=time_step_spec,
             action_spec=action_spec,
             actor_network=self._actor_network,
-            training=False,
-            observation_and_action_constraint_splitter=observation_and_action_constraint_splitter
-        )
+            training=False,observation_and_action_constraint_splitter=observation_and_action_constraint_splitter)
 
         self._train_policy = actor_policy_ctor(
             time_step_spec=time_step_spec,
             action_spec=action_spec,
             actor_network=self._actor_network,
-            training=True,
-            observation_and_action_constraint_splitter=observation_and_action_constraint_splitter
-        )
+            training=True,observation_and_action_constraint_splitter=observation_and_action_constraint_splitter)
 
         self._log_alpha = common.create_variable(
             'initial_log_alpha',
@@ -211,7 +210,7 @@ class DiscreteSacAgent(tf_agent.TFAgent):
 
         train_sequence_length = 2 if not critic_network.state_spec else None
 
-        super().__init__(
+        super(DiscreteSacAgent, self).__init__(
             time_step_spec,
             action_spec,
             policy=policy,
@@ -219,40 +218,31 @@ class DiscreteSacAgent(tf_agent.TFAgent):
             train_sequence_length=train_sequence_length,
             debug_summaries=debug_summaries,
             summarize_grads_and_vars=summarize_grads_and_vars,
-            train_step_counter=train_step_counter
+            train_step_counter=train_step_counter,
         )
 
         self._as_transition = data_converter.AsTransition(
             self.data_context, squeeze_time_dim=(train_sequence_length == 2))
 
     def _check_action_spec(self, action_spec):
-        flat_action_spec = tf.nest.flatten(action_spec)
-        for spec in flat_action_spec:
-            if spec.dtype.is_floating:
-                raise NotImplementedError(
-                    'DiscreteSacAgent does not support continuous actions. '
-                    'Action spec: {}'.format(action_spec))
+        # The original SAC implementation would throw an error here if there were discrete actions,
+        # but the Hybrid variation of SAC does support discrete actions.
+        pass
 
     def _get_default_target_entropy(self, action_spec):
-        # Target entropy is -log(1/|A|) * ratio (= maximum entropy * ratio).
-        # ratio=0.98 is thevalue used by Christodoulou, 2019 so we use this by default
-        target_entropy = - np.log(1/self._num_actions) * 0.98
+        # If target_entropy was not passed, set it to -dim(A)/2.0
+        # Note that the original default entropy target is -dim(A) in the SAC paper.
+        # However this formulation has also been used in practice by the original
+        # authors and has in our experience been more stable for gym/mujoco.
+        flat_action_spec = tf.nest.flatten(action_spec)
+        target_entropy = -np.sum([
+            np.product(single_spec.shape.as_list())
+            for single_spec in flat_action_spec
+        ]) / 2.0
         return target_entropy
-
-    def _actions_dist(self, time_steps):
-        """Get actions distributions from policy."""
-        # Get raw action distribution from policy, and initialize bijectors list.
-        batch_size = nest_utils.get_outer_shape(
-            time_steps, self._time_step_spec)[0]
-        policy_state = self._train_policy.get_initial_state(batch_size)
-        action_distribution = self._train_policy.distribution(
-            time_steps, policy_state=policy_state).action
-
-        return action_distribution
 
     def _initialize(self):
         """Returns an op to initialize the agent.
-
         Copies weights from the Q networks to the target Q network.
         """
         common.soft_variables_update(
@@ -266,17 +256,13 @@ class DiscreteSacAgent(tf_agent.TFAgent):
 
     def _train(self, experience, weights):
         """Returns a train op to update the agent's networks.
-
         This method trains with the provided batched experience.
-
         Args:
           experience: A time-stacked trajectory object.
           weights: Optional scalar or elementwise (per-batch-entry) importance
             weights.
-
         Returns:
           A train_op.
-
         Raises:
           ValueError: If optimizers are None and no default value was provided to
             the constructor.
@@ -293,7 +279,7 @@ class DiscreteSacAgent(tf_agent.TFAgent):
             assert trainable_critic_variables, ('No trainable critic variables to '
                                                 'optimize.')
             tape.watch(trainable_critic_variables)
-            critic_loss = self._critic_loss_weight*self.critic_loss(
+            critic_loss = self._critic_loss_weight * self.critic_loss(
                 time_steps,
                 actions,
                 next_time_steps,
@@ -313,7 +299,7 @@ class DiscreteSacAgent(tf_agent.TFAgent):
             assert trainable_actor_variables, ('No trainable actor variables to '
                                                'optimize.')
             tape.watch(trainable_actor_variables)
-            actor_loss = self._actor_loss_weight*self.actor_loss(
+            actor_loss = self._actor_loss_weight * self.actor_loss(
                 time_steps, weights=weights)
         tf.debugging.check_numerics(actor_loss, 'Actor loss is inf or nan.')
         actor_grads = tape.gradient(actor_loss, trainable_actor_variables)
@@ -324,14 +310,11 @@ class DiscreteSacAgent(tf_agent.TFAgent):
         with tf.GradientTape(watch_accessed_variables=False) as tape:
             assert alpha_variable, 'No alpha variable to optimize.'
             tape.watch(alpha_variable)
-            alpha_loss = self._alpha_loss_weight*self.alpha_loss(
+            alpha_loss = self._alpha_loss_weight * self.alpha_loss(
                 time_steps, weights=weights)
         tf.debugging.check_numerics(alpha_loss, 'Alpha loss is inf or nan.')
         alpha_grads = tape.gradient(alpha_loss, alpha_variable)
-        self._apply_gradients(alpha_grads, alpha_variable,
-                              self._alpha_optimizer)
-
-        total_loss = critic_loss + actor_loss + alpha_loss
+        self._apply_gradients(alpha_grads, alpha_variable, self._alpha_optimizer)
 
         with tf.name_scope('Losses'):
             tf.compat.v2.summary.scalar(
@@ -340,11 +323,59 @@ class DiscreteSacAgent(tf_agent.TFAgent):
                 name='actor_loss', data=actor_loss, step=self.train_step_counter)
             tf.compat.v2.summary.scalar(
                 name='alpha_loss', data=alpha_loss, step=self.train_step_counter)
-            tf.compat.v2.summary.scalar(
-                name='total_loss', data=total_loss, step=self.train_step_counter)
 
         self.train_step_counter.assign_add(1)
         self._update_target()
+
+        total_loss = critic_loss + actor_loss + alpha_loss
+
+        extra = SacLossInfo(
+            critic_loss=critic_loss, actor_loss=actor_loss, alpha_loss=alpha_loss)
+
+        return tf_agent.LossInfo(loss=total_loss, extra=extra)
+
+    def _loss(self,
+              experience: types.NestedTensor,
+              weights: Optional[types.Tensor] = None):
+        """Returns the loss of the provided experience.
+        Args:
+          experience: A time-stacked trajectory object.
+          weights: Optional scalar or elementwise (per-batch-entry) importance
+            weights.
+        Returns:
+          A `LossInfo` containing the loss for the experience.
+        """
+        transition = self._as_transition(experience)
+        time_steps, policy_steps, next_time_steps = transition
+        actions = policy_steps.action
+        critic_loss = self._critic_loss_weight * self.critic_loss(
+            time_steps,
+            actions,
+            next_time_steps,
+            td_errors_loss_fn=self._td_errors_loss_fn,
+            gamma=self._gamma,
+            reward_scale_factor=self._reward_scale_factor,
+            weights=weights,
+            training=False)
+        tf.debugging.check_numerics(critic_loss, 'Critic loss is inf or nan.')
+
+        actor_loss = self._actor_loss_weight * self.actor_loss(
+            time_steps, weights=weights)
+        tf.debugging.check_numerics(actor_loss, 'Actor loss is inf or nan.')
+
+        alpha_loss = self._alpha_loss_weight * self.alpha_loss(
+            time_steps, weights=weights)
+        tf.debugging.check_numerics(alpha_loss, 'Alpha loss is inf or nan.')
+
+        with tf.name_scope('Losses'):
+            tf.compat.v2.summary.scalar(
+                name='critic_loss', data=critic_loss, step=self.train_step_counter)
+            tf.compat.v2.summary.scalar(
+                name='actor_loss', data=actor_loss, step=self.train_step_counter)
+            tf.compat.v2.summary.scalar(
+                name='alpha_loss', data=alpha_loss, step=self.train_step_counter)
+
+        total_loss = critic_loss + actor_loss + alpha_loss
 
         extra = SacLossInfo(
             critic_loss=critic_loss, actor_loss=actor_loss, alpha_loss=alpha_loss)
@@ -368,20 +399,16 @@ class DiscreteSacAgent(tf_agent.TFAgent):
 
     def _get_target_updater(self, tau=1.0, period=1):
         """Performs a soft update of the target network parameters.
-
         For each weight w_s in the original network, and its corresponding
         weight w_t in the target network, a soft update is:
         w_t = (1- tau) x w_t + tau x ws
-
         Args:
           tau: A float scalar in [0, 1]. Default `tau=1.0` means hard update.
           period: Step interval at which the target network is updated.
-
         Returns:
           A callable that performs a soft update of the target network parameters.
         """
         with tf.name_scope('update_target'):
-
             def update():
                 """Update target network."""
                 critic_update_1 = common.soft_variables_update(
@@ -406,6 +433,21 @@ class DiscreteSacAgent(tf_agent.TFAgent):
 
             return common.Periodically(update, period, 'update_targets')
 
+    def _actions_and_log_probs(self, time_steps):
+        """Get actions and corresponding log probabilities from policy."""
+        # Get raw action distribution from policy, and initialize bijectors list.
+        batch_size = nest_utils.get_outer_shape(time_steps, self._time_step_spec)[0]
+        policy_state = self._train_policy.get_initial_state(batch_size)
+        action_distribution = self._train_policy.distribution(
+            time_steps, policy_state=policy_state).action
+
+        # Sample actions and log_pis from transformed distribution.
+        actions = tf.nest.map_structure(lambda d: d.sample(), action_distribution)
+        log_pi = common.log_probability(action_distribution, actions,
+                                        self.action_spec)
+
+        return actions, log_pi
+
     def critic_loss(self,
                     time_steps: ts.TimeStep,
                     actions: types.Tensor,
@@ -416,73 +458,47 @@ class DiscreteSacAgent(tf_agent.TFAgent):
                     weights: Optional[types.Tensor] = None,
                     training: bool = False) -> types.Tensor:
         """Computes the critic loss for SAC training.
-
         Args:
-            time_steps: A batch of timesteps.
-            actions: A batch of actions.
-            next_time_steps: A batch of next timesteps.
-            td_errors_loss_fn: A function(td_targets, predictions) to compute
+          time_steps: A batch of timesteps.
+          actions: A batch of actions.
+          next_time_steps: A batch of next timesteps.
+          td_errors_loss_fn: A function(td_targets, predictions) to compute
             elementwise (per-batch-entry) loss.
-            gamma: Discount for future rewards.
-            reward_scale_factor: Multiplicative factor to scale rewards.
-            weights: Optional scalar or elementwise (per-batch-entry) importance
+          gamma: Discount for future rewards.
+          reward_scale_factor: Multiplicative factor to scale rewards.
+          weights: Optional scalar or elementwise (per-batch-entry) importance
             weights.
-            training: Whether this loss is being used for training.
-
+          training: Whether this loss is being used for training.
         Returns:
-            critic_loss: A scalar critic loss.
+          critic_loss: A scalar critic loss.
         """
         with tf.name_scope('critic_loss'):
             nest_utils.assert_same_structure(actions, self.action_spec)
-            nest_utils.assert_same_structure(
-                time_steps, self.time_step_spec)
-            nest_utils.assert_same_structure(
-                next_time_steps, self.time_step_spec)
+            nest_utils.assert_same_structure(time_steps, self.time_step_spec)
+            nest_utils.assert_same_structure(next_time_steps, self.time_step_spec)
 
-            alpha = tf.math.exp(self._log_alpha)
-            next_dist = self._actions_dist(next_time_steps)
-
-            target_q_values1, _ = self._target_critic_network_1(
-                next_time_steps.observation['obs'], next_time_steps.step_type, training=False)
-            target_q_values2, _ = self._target_critic_network_2(
-                next_time_steps.observation['obs'], next_time_steps.step_type, training=False)
-            v_approx_next_state = tf.minimum(
-                target_q_values1, target_q_values2)
-
-            next_probs = next_dist.probs_parameter()
-            v_approx_next_state = tf.reduce_sum(
-                v_approx_next_state * next_probs, axis=-1)  # (?, )
-            v_approx_next_state += alpha * next_dist.entropy()  # (?, )
-
-            discounts = next_time_steps.discount * \
-                tf.constant(gamma, dtype=tf.float32)
-
-            # Mask is 0.0 at end of each episode to restart cumulative sum
-            #   end of each episode.
-            episode_mask = common.get_episode_mask(next_time_steps)
+            next_actions, next_log_pis = self._actions_and_log_probs(next_time_steps)
+            target_input = (next_time_steps.observation['obs'], next_actions)
+            target_q_values1, unused_network_state1 = self._target_critic_network_1(
+                target_input, step_type=next_time_steps.step_type, training=False)
+            target_q_values2, unused_network_state2 = self._target_critic_network_2(
+                target_input, step_type=next_time_steps.step_type, training=False)
+            target_q_values = (
+                    tf.minimum(target_q_values1, target_q_values2) -
+                    tf.exp(self._log_alpha) * next_log_pis)
 
             td_targets = tf.stop_gradient(
-                reward_scale_factor * next_time_steps.reward + discounts * v_approx_next_state*episode_mask)  # (?, 1)
+                reward_scale_factor * next_time_steps.reward +
+                gamma * next_time_steps.discount * target_q_values)
 
+            pred_input = (time_steps.observation['obs'], actions)
             pred_td_targets1, _ = self._critic_network_1(
-                time_steps.observation['obs'], time_steps.step_type, training=training)
+                pred_input, step_type=time_steps.step_type, training=training)
             pred_td_targets2, _ = self._critic_network_2(
-                time_steps.observation['obs'], time_steps.step_type, training=training)
-
-            # Actually selected Q-values (from the actions batch).
-            temp_one_hot = tf.one_hot(actions, depth=self._num_actions,
-                                      dtype=tf.float32)  # (?, nb_actions)
-
-            pred_td_targets1 = tf.reduce_sum(
-                pred_td_targets1 * temp_one_hot, axis=-1)  # (?, 1)
-            pred_td_targets2 = tf.reduce_sum(
-                pred_td_targets2 * temp_one_hot, axis=-1)  # (?, 1)
-
-            critic_loss1 = td_errors_loss_fn(
-                td_targets, pred_td_targets1)
-            critic_loss2 = td_errors_loss_fn(
-                td_targets, pred_td_targets2)
-            critic_loss = critic_loss1 + critic_loss2  # (?, ) or (?, 1)
+                pred_input, step_type=time_steps.step_type, training=training)
+            critic_loss1 = td_errors_loss_fn(td_targets, pred_td_targets1)
+            critic_loss2 = td_errors_loss_fn(td_targets, pred_td_targets2)
+            critic_loss = critic_loss1 + critic_loss2
 
             if critic_loss.shape.rank > 1:
                 # Sum over the time dimension.
@@ -505,35 +521,24 @@ class DiscreteSacAgent(tf_agent.TFAgent):
                    time_steps: ts.TimeStep,
                    weights: Optional[types.Tensor] = None) -> types.Tensor:
         """Computes the actor_loss for SAC training.
-
         Args:
-        time_steps: A batch of timesteps.
-        weights: Optional scalar or elementwise (per-batch-entry) importance
+          time_steps: A batch of timesteps.
+          weights: Optional scalar or elementwise (per-batch-entry) importance
             weights.
-
         Returns:
-        actor_loss: A scalar actor loss.
+          actor_loss: A scalar actor loss.
         """
         with tf.name_scope('actor_loss'):
-            nest_utils.assert_same_structure(
-                time_steps, self.time_step_spec)
+            nest_utils.assert_same_structure(time_steps, self.time_step_spec)
 
-            dist = self._actions_dist(time_steps)
-            alpha = tf.exp(self._log_alpha)
-
+            actions, log_pi = self._actions_and_log_probs(time_steps)
+            target_input = (time_steps.observation['obs'], actions)
             target_q_values1, _ = self._critic_network_1(
-                time_steps.observation['obs'], time_steps.step_type, training=False)
+                target_input, step_type=time_steps.step_type, training=False)
             target_q_values2, _ = self._critic_network_2(
-                time_steps.observation['obs'], time_steps.step_type, training=False)
-            target_q_values = tf.minimum(
-                target_q_values1, target_q_values2)  # (?, q_outputs)
-
-            logits_q = tf.stop_gradient(
-                target_q_values / alpha)
-            dist_d_qs = tfp.distributions.Categorical(logits=logits_q)  # (?, )
-            kl = tfp.distributions.kl_divergence(dist, dist_d_qs)  # (?, )
-            actor_loss = alpha * kl  # (?, )
-
+                target_input, step_type=time_steps.step_type, training=False)
+            target_q_values = tf.minimum(target_q_values1, target_q_values2)
+            actor_loss = tf.exp(self._log_alpha) * log_pi - target_q_values
             if actor_loss.shape.rank > 1:
                 # Sum over the time dimension.
                 actor_loss = tf.reduce_sum(
@@ -544,7 +549,7 @@ class DiscreteSacAgent(tf_agent.TFAgent):
                 sample_weight=weights,
                 regularization_loss=reg_loss)
             actor_loss = agg_loss.total_loss
-            self._actor_loss_debug_summaries(actor_loss, dist,
+            self._actor_loss_debug_summaries(actor_loss, actions, log_pi,
                                              target_q_values, time_steps)
 
             return actor_loss
@@ -552,76 +557,36 @@ class DiscreteSacAgent(tf_agent.TFAgent):
     def alpha_loss(self,
                    time_steps: ts.TimeStep,
                    weights: Optional[types.Tensor] = None) -> types.Tensor:
-        """Computes the alpha_loss for EC-SAC training (discrete actions).
-
+        """Computes the alpha_loss for EC-SAC training.
         Args:
           time_steps: A batch of timesteps.
           weights: Optional scalar or elementwise (per-batch-entry) importance
             weights.
-
         Returns:
-          alpha_d_loss: A scalar alpha loss (discrete action).
+          alpha_loss: A scalar alpha loss.
         """
         with tf.name_scope('alpha_loss'):
             nest_utils.assert_same_structure(time_steps, self.time_step_spec)
-            # alpha_loss = alpha * (H - H_target)
-            #            = -alpha * (pi - log(pi) + H_target) equivalent to Christodoulou, 2019
-            dist = self._actions_dist(time_steps)
-            entropy = dist.entropy()
-            entropy_diff = tf.stop_gradient(
-                entropy - self._target_entropy)
+
+            unused_actions, log_pi = self._actions_and_log_probs(time_steps)
+            entropy_diff = tf.stop_gradient(-log_pi - self._target_entropy)
             if self._use_log_alpha_in_alpha_loss:
-                alpha_loss = self._log_alpha*entropy_diff
+                alpha_loss = (self._log_alpha * entropy_diff)
             else:
-                alpha_loss = tf.exp(self._log_alpha)*entropy_diff
+                alpha_loss = (tf.exp(self._log_alpha) * entropy_diff)
 
             if alpha_loss.shape.rank > 1:
                 # Sum over the time dimension.
-                alpha_loss = tf.reduce_mean(
+                alpha_loss = tf.reduce_sum(
                     alpha_loss, axis=range(1, alpha_loss.shape.rank))
 
             agg_loss = common.aggregate_losses(
                 per_example_loss=alpha_loss, sample_weight=weights)
             alpha_loss = agg_loss.total_loss
 
-            self._alpha_loss_debug_summaries(
-                alpha_loss, entropy_diff)
+            self._alpha_loss_debug_summaries(alpha_loss, entropy_diff)
 
             return alpha_loss
-
-    def _actor_loss_debug_summaries(self, actor_loss, dist,
-                                    target_q_values, time_steps):
-        if self._debug_summaries:
-            common.generate_tensor_summaries('actor_loss', actor_loss,
-                                             self.train_step_counter)
-            try:
-                tf.compat.v2.summary.histogram(
-                    name='actions_log_prob_discrete',
-                    data=dist.logits,
-                    step=self.train_step_counter)
-            except ValueError:
-                pass  # Guard against internal SAC variants that do not directly
-                # generate actions.
-
-            common.generate_tensor_summaries('target_q_values', target_q_values,
-                                             self.train_step_counter)
-            common.generate_tensor_summaries('act_mode', dist.mode(),
-                                             self.train_step_counter)
-            try:
-                common.generate_tensor_summaries('entropy_action',
-                                                 dist.entropy(),
-                                                 self.train_step_counter)
-            except NotImplementedError:
-                pass  # Some distributions do not have an analytic entropy.
-
-    def _alpha_loss_debug_summaries(self, alpha_loss, entropy_diff):
-        if self._debug_summaries:
-            common.generate_tensor_summaries(f'alpha_loss', alpha_loss,
-                                             self.train_step_counter)
-            common.generate_tensor_summaries(f'entropy_diff', entropy_diff,
-                                             self.train_step_counter)
-            tf.compat.v2.summary.scalar(
-                name=f'log_alpha', data=self._log_alpha, step=self.train_step_counter)
 
     def _critic_loss_debug_summaries(self, td_targets, pred_td_targets1,
                                      pred_td_targets2):
@@ -638,138 +603,249 @@ class DiscreteSacAgent(tf_agent.TFAgent):
             common.generate_tensor_summaries('pred_td_targets2', pred_td_targets2,
                                              self.train_step_counter)
 
-class DiscreteSacCriticNetwork(network.Network):
-    """Creates a critic network."""
+    def _actor_loss_debug_summaries(self, actor_loss, actions, log_pi,
+                                    target_q_values, time_steps):
+        if self._debug_summaries:
+            common.generate_tensor_summaries('actor_loss', actor_loss,
+                                             self.train_step_counter)
+            try:
+                for name, action in nest_utils.flatten_with_joined_paths(actions):
+                    common.generate_tensor_summaries(name, action,
+                                                     self.train_step_counter)
+            except ValueError:
+                pass  # Guard against internal SAC variants that do not directly
+                # generate actions.
 
-    def __init__(self,
-                 input_tensor_spec,
-                 observation_preprocessing_layers=None,
-                 observation_preprocessing_combiner=None,
-                 observation_conv_layer_params=None,
-                 observation_fc_layer_params=(75, 40),
-                 observation_dropout_layer_params=None,
-                 action_fc_layer_params=None,
-                 action_dropout_layer_params=None,
-                 joint_fc_layer_params=(75, 40),
-                 joint_dropout_layer_params=None,
-                 activation_fn=tf.nn.relu,
-                 output_activation_fn=None,
-                 kernel_initializer=None,
-                 last_kernel_initializer=None,
-                 batch_squash=True,
-                 dtype=tf.float32,
-                 name='CriticNetwork'):
-        """Creates an instance of `CriticNetwork`.
+            common.generate_tensor_summaries('log_pi', log_pi,
+                                             self.train_step_counter)
+            tf.compat.v2.summary.scalar(
+                name='entropy_avg',
+                data=-tf.reduce_mean(input_tensor=log_pi),
+                step=self.train_step_counter)
+            common.generate_tensor_summaries('target_q_values', target_q_values,
+                                             self.train_step_counter)
+            batch_size = nest_utils.get_outer_shape(time_steps,
+                                                    self._time_step_spec)[0]
+            policy_state = self._train_policy.get_initial_state(batch_size)
+            action_distribution = self._train_policy.distribution(
+                time_steps, policy_state).action
+            if isinstance(action_distribution, tfp.distributions.Normal):
+                common.generate_tensor_summaries('act_mean', action_distribution.loc,
+                                                 self.train_step_counter)
+                common.generate_tensor_summaries('act_stddev',
+                                                 action_distribution.scale,
+                                                 self.train_step_counter)
+            elif isinstance(action_distribution, tfp.distributions.Categorical):
+                common.generate_tensor_summaries('act_mode', action_distribution.mode(),
+                                                 self.train_step_counter)
+            try:
+                for name, action_dist in nest_utils.flatten_with_joined_paths(
+                        action_distribution):
+                    common.generate_tensor_summaries('entropy_' + name,
+                                                     action_dist.entropy(),
+                                                     self.train_step_counter)
+            except NotImplementedError:
+                pass  # Some distributions do not have an analytic entropy.
 
-        Args:
-           input_tensor_spec: A tuple of (observation, action) each a nest of
-            `tensor_spec.TensorSpec` representing the inputs.
-          preprocessing_layers: (Optional.) A nest of `tf.keras.layers.Layer`
-            representing preprocessing for the different observations.
-            All of these layers must not be already built. For more details see
-            the documentation of `networks.EncodingNetwork`.
-          preprocessing_combiner: (Optional.) A keras layer that takes a flat list
-            of tensors and combines them. Good options include
-            `tf.keras.layers.Add` and `tf.keras.layers.Concatenate(axis=-1)`.
-            This layer must not be already built. For more details see
-            the documentation of `networks.EncodingNetwork`.
-          observation_conv_layer_params: Optional list of convolution layer
-            parameters for observations, where each item is a length-three tuple
-            indicating (num_units, kernel_size, stride).
-          observation_fc_layer_params: Optional list of fully connected parameters
-            for observations, where each item is the number of units in the layer.
-          observation_dropout_layer_params: Optional list of dropout layer
-            parameters, each item is the fraction of input units to drop or a
-            dictionary of parameters according to the keras.Dropout documentation.
-            The additional parameter `permanent`, if set to True, allows to apply
-            dropout at inference for approximated Bayesian inference. The dropout
-            layers are interleaved with the fully connected layers; there is a
-            dropout layer after each fully connected layer, except if the entry in
-            the list is None. This list must have the same length of
-            observation_fc_layer_params, or be None.
-          action_fc_layer_params: Optional list of fully connected parameters for
-            actions, where each item is the number of units in the layer.
-          action_dropout_layer_params: Optional list of dropout layer parameters,
-            each item is the fraction of input units to drop or a dictionary of
-            parameters according to the keras.Dropout documentation. The additional
-            parameter `permanent`, if set to True, allows to apply dropout at
-            inference for approximated Bayesian inference. The dropout layers are
-            interleaved with the fully connected layers; there is a dropout layer
-            after each fully connected layer, except if the entry in the list is
-            None. This list must have the same length of action_fc_layer_params, or
-            be None.
-          joint_fc_layer_params: Optional list of fully connected parameters after
-            merging observations and actions, where each item is the number of units
-            in the layer.
-          joint_dropout_layer_params: Optional list of dropout layer parameters,
-            each item is the fraction of input units to drop or a dictionary of
-            parameters according to the keras.Dropout documentation. The additional
-            parameter `permanent`, if set to True, allows to apply dropout at
-            inference for approximated Bayesian inference. The dropout layers are
-            interleaved with the fully connected layers; there is a dropout layer
-            after each fully connected layer, except if the entry in the list is
-            None. This list must have the same length of joint_fc_layer_params, or
-            be None.
-          activation_fn: Activation function, e.g. tf.nn.relu, slim.leaky_relu, ...
-          output_activation_fn: Activation function for the last layer. This can be
-            used to restrict the range of the output. For example, one can pass
-            tf.keras.activations.sigmoid here to restrict the output to be bounded
-            between 0 and 1.
-          kernel_initializer: kernel initializer for all layers except for the value
-            regression layer. If None, a VarianceScaling initializer will be used.
-          last_kernel_initializer: kernel initializer for the value regression
-             layer. If None, a RandomUniform initializer will be used.
-          batch_squash: If True the outer_ranks of the observation are squashed into
-            the batch dimension. This allow encoding networks to be used with
-            observations with shape [BxTx...].
-          dtype: The dtype to use by the layers.
-          name: A string representing name of the network.
+    def _alpha_loss_debug_summaries(self, alpha_loss, entropy_diff):
+        if self._debug_summaries:
+            common.generate_tensor_summaries('alpha_loss', alpha_loss,
+                                             self.train_step_counter)
+            common.generate_tensor_summaries('entropy_diff', entropy_diff,
+                                             self.train_step_counter)
 
-        Raises:
-          ValueError: If `observation_spec` or `action_spec` contains more than one
-            observation.
-        """
-        observation_spec, action_spec = input_tensor_spec
+            tf.compat.v2.summary.scalar(
+                name='log_alpha', data=self._log_alpha, step=self.train_step_counter)
 
-        super().__init__(
-            input_tensor_spec=observation_spec,
-            state_spec=(),
-            name=name)
 
-        if kernel_initializer is None:
-            kernel_initializer = tf.compat.v1.keras.initializers.VarianceScaling(
-                scale=1. / 3., mode='fan_in', distribution='uniform')
-        if last_kernel_initializer is None:
-            last_kernel_initializer = tf.keras.initializers.RandomUniform(
-                minval=-0.003, maxval=0.003)
+def _categorical_projection_net(action_spec, logits_init_output_factor=0.1):
+  return categorical_projection_network.CategoricalProjectionNetwork(
+      action_spec, logits_init_output_factor=logits_init_output_factor)
 
-        self._observation_encoder = encoding_network.EncodingNetwork(
-            observation_spec,
-            preprocessing_layers=observation_preprocessing_layers,
-            preprocessing_combiner=observation_preprocessing_combiner,
-            conv_layer_params=observation_conv_layer_params,
-            fc_layer_params=observation_fc_layer_params,
-            dropout_layer_params=observation_dropout_layer_params,
-            activation_fn=activation_fn,
-            kernel_initializer=kernel_initializer,
-            batch_squash=batch_squash,
-            dtype=dtype)
 
-        flat_action_spec = tf.nest.flatten(action_spec)
-        q_output_size = np.sum([
-            single_spec.maximum-single_spec.minimum+1
-            for single_spec in flat_action_spec
-        ])
-        self._output_layer = tf.keras.layers.Dense(
-            q_output_size,
-            activation=output_activation_fn,
-            kernel_initializer=last_kernel_initializer,
-            name='value')
+def _normal_projection_net(action_spec,
+                           init_action_stddev=0.35,
+                           init_means_output_factor=0.1):
+  std_bias_initializer_value = np.log(np.exp(init_action_stddev) - 1)
 
-    def call(self, inputs, step_type=(), network_state=(), training=False):
-        state, network_state = self._observation_encoder(
-            inputs, step_type=step_type, network_state=network_state,
-            training=training)
+  return normal_projection_network.NormalProjectionNetwork(
+      action_spec,
+      init_means_output_factor=init_means_output_factor,
+      std_bias_initializer_value=std_bias_initializer_value)
 
-        q_values = self._output_layer(state)
-        return q_values, network_state
+
+class ActorDistributionRnnNetwork(network.DistributionNetwork):
+  """Creates an actor producing either Normal or Categorical distribution.
+  Note: By default, this network uses `NormalProjectionNetwork` for continuous
+  projection which by default uses `tanh_squash_to_spec` to normalize its
+  output. Due to the nature of the `tanh` function, values near the spec bounds
+  cannot be returned.
+  """
+
+  def __init__(self,
+               input_tensor_spec,
+               output_tensor_spec,
+               preprocessing_layers=None,
+               preprocessing_combiner=None,
+               conv_layer_params=None,
+               input_fc_layer_params=(200, 100),
+               input_dropout_layer_params=None,
+               lstm_size=None,
+               output_fc_layer_params=(200, 100),
+               activation_fn=tf.keras.activations.relu,
+               dtype=tf.float32,
+               discrete_projection_net=_categorical_projection_net,
+               continuous_projection_net=_normal_projection_net,
+               rnn_construction_fn=None,
+               rnn_construction_kwargs={},
+               name='ActorDistributionRnnNetwork'):
+    """Creates an instance of `ActorDistributionRnnNetwork`.
+    Args:
+      input_tensor_spec: A nest of `tensor_spec.TensorSpec` representing the
+        input.
+      output_tensor_spec: A nest of `tensor_spec.BoundedTensorSpec` representing
+        the output.
+      preprocessing_layers: (Optional.) A nest of `tf.keras.layers.Layer`
+        representing preprocessing for the different observations.
+        All of these layers must not be already built. For more details see
+        the documentation of `networks.EncodingNetwork`.
+      preprocessing_combiner: (Optional.) A keras layer that takes a flat list
+        of tensors and combines them. Good options include
+        `tf.keras.layers.Add` and `tf.keras.layers.Concatenate(axis=-1)`.
+        This layer must not be already built. For more details see
+        the documentation of `networks.EncodingNetwork`.
+      conv_layer_params: Optional list of convolution layers parameters, where
+        each item is a length-three tuple indicating (filters, kernel_size,
+        stride).
+      input_fc_layer_params: Optional list of fully_connected parameters, where
+        each item is the number of units in the layer. This is applied before
+        the LSTM cell.
+      input_dropout_layer_params: Optional list of dropout layer parameters,
+        each item is the fraction of input units to drop or a dictionary of
+        parameters according to the keras.Dropout documentation. The additional
+        parameter `permanent`, if set to True, allows to apply dropout at
+        inference for approximated Bayesian inference. The dropout layers are
+        interleaved with the fully connected layers; there is a dropout layer
+        after each fully connected layer, except if the entry in the list is
+        None. This list must have the same length of input_fc_layer_params, or
+        be None.
+      lstm_size: An iterable of ints specifying the LSTM cell sizes to use.
+      output_fc_layer_params: Optional list of fully_connected parameters, where
+        each item is the number of units in the layer. This is applied after the
+        LSTM cell.
+      activation_fn: Activation function, e.g. tf.nn.relu, slim.leaky_relu, ...
+      dtype: The dtype to use by the convolution and fully connected layers.
+      discrete_projection_net: Callable that generates a discrete projection
+        network to be called with some hidden state and the outer_rank of the
+        state.
+      continuous_projection_net: Callable that generates a continuous projection
+        network to be called with some hidden state and the outer_rank of the
+        state.
+      rnn_construction_fn: (Optional.) Alternate RNN construction function, e.g.
+        tf.keras.layers.LSTM, tf.keras.layers.CuDNNLSTM. It is invalid to
+        provide both rnn_construction_fn and lstm_size.
+      rnn_construction_kwargs: (Optional.) Dictionary or arguments to pass to
+        rnn_construction_fn.
+        The RNN will be constructed via:
+        ```
+        rnn_layer = rnn_construction_fn(**rnn_construction_kwargs)
+        ```
+      name: A string representing name of the network.
+    Raises:
+      ValueError: If 'input_dropout_layer_params' is not None.
+    """
+    if input_dropout_layer_params:
+      raise ValueError('Dropout layer is not supported.')
+
+    lstm_encoder = lstm_encoding_network.LSTMEncodingNetwork(
+        input_tensor_spec=input_tensor_spec,
+        preprocessing_layers=preprocessing_layers,
+        preprocessing_combiner=preprocessing_combiner,
+        conv_layer_params=conv_layer_params,
+        input_fc_layer_params=input_fc_layer_params,
+        lstm_size=lstm_size,
+        output_fc_layer_params=output_fc_layer_params,
+        activation_fn=activation_fn,
+        rnn_construction_fn=rnn_construction_fn,
+        rnn_construction_kwargs=rnn_construction_kwargs,
+        dtype=dtype,
+        name=name)
+
+    def map_proj(spec):
+      if tensor_spec.is_discrete(spec):
+        return discrete_projection_net(spec)
+      else:
+        return continuous_projection_net(spec)
+
+    projection_networks = tf.nest.map_structure(map_proj, output_tensor_spec)
+    output_spec = tf.nest.map_structure(lambda proj_net: proj_net.output_spec,
+                                        projection_networks)
+
+    super(ActorDistributionRnnNetwork, self).__init__(
+        input_tensor_spec=input_tensor_spec,
+        state_spec=lstm_encoder.state_spec,
+        output_spec=output_spec,
+        name=name)
+
+    self._lstm_encoder = lstm_encoder
+    self._projection_networks = projection_networks
+    self._output_tensor_spec = output_tensor_spec
+
+  @property
+  def output_tensor_spec(self):
+    return self._output_tensor_spec
+
+  def call(self, observation, step_type, network_state=(), training=False,mask=None):
+    state, network_state = self._lstm_encoder(
+        observation, step_type=step_type, network_state=network_state,
+        training=training)
+    outer_rank = nest_utils.get_outer_rank(observation, self.input_tensor_spec)
+
+    discrete_actions_distributions = tf.nest.map_structure(
+        lambda proj_net, out_spec: proj_net(state, outer_rank, training=training,mask=mask)[0] if tensor_spec.is_discrete(out_spec) else None,
+        self._projection_networks, self._output_tensor_spec)
+
+    # Isolate the discrete action distributions. There may be none.
+    discrete_actions_distributions_pruned = tf.nest.flatten(discrete_actions_distributions)
+    discrete_actions_distributions_pruned = [action for action in discrete_actions_distributions_pruned if action is not None]
+
+    if discrete_actions_distributions_pruned:
+        if not training:
+            # Turn discrete action logits into one-hots.
+            discrete_actions = tf.nest.map_structure(
+                lambda d_actions_distribution: tf.one_hot(tf.argmax(d_actions_distribution.logits, axis=1),
+                                                          tf.shape(d_actions_distribution.logits)[-1],
+                                                          axis=1,
+                                                          dtype=d_actions_distribution.dtype) if d_actions_distribution else None,
+                discrete_actions_distributions_pruned)
+        else:
+            # Use logits to train.
+            discrete_actions = tf.nest.map_structure(
+                lambda d_actions_distribution: tf.nn.softmax(d_actions_distribution.logits) if d_actions_distribution else None,
+                discrete_actions_distributions_pruned)
+
+        # Flatten and concatenate all discrete actions.
+        discrete_actions = tf.nest.flatten(discrete_actions)
+        discrete_actions = tf.nest.map_structure(lambda tensor: tf.reshape(tensor, [tensor.shape[0], -1]), discrete_actions)
+        discrete_actions = tf.concat(discrete_actions, axis=-1)
+
+        # Cast to the state's dtype.
+        discrete_actions = tf.cast(discrete_actions, state.dtype)
+
+        # Flatten state
+        state = tf.reshape(state, [state.shape[0], -1])
+
+        # Concatenate the discrete actions to the original state.
+        state = tf.concat((state, discrete_actions), axis=-1, name='state_and_discrete_actions')
+
+    # Isolate the continuous action distributions.
+    continuous_actions_distributions = tf.nest.map_structure(
+        lambda proj_net, out_spec: proj_net(state, outer_rank, training=training,mask=mask)[0] if tensor_spec.is_continuous(out_spec) else None,
+        self._projection_networks, self._output_tensor_spec)
+
+    # Now we have a list of discrete actions (if any) and a list of continuous actions.
+    # Next, go through the output spec and pick the right action from these two disjoint lists.
+    output_actions = tf.nest.map_structure(lambda d_action, c_action, out_spec: d_action if tensor_spec.is_discrete(out_spec) else c_action,
+                                           discrete_actions_distributions, continuous_actions_distributions, self._output_tensor_spec)
+
+    return output_actions, network_state

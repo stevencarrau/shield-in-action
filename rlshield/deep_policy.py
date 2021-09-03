@@ -7,6 +7,8 @@ from tf_agents.policies import tf_policy
 import numpy as np
 from tf_agents.replay_buffers import episodic_replay_buffer
 from itertools import chain
+from tf_agents.agents.sac import tanh_normal_projection_network
+from tf_agents.agents.ddpg import critic_rnn_network
 from tf_agents.networks import sequential,actor_distribution_network,actor_distribution_rnn_network,value_rnn_network,value_network
 from tf_agents.networks.mask_splitter_network import MaskSplitterNetwork
 from tf_agents.agents.ddpg.critic_network import CriticNetwork
@@ -16,7 +18,7 @@ from tf_agents.networks import network
 from tf_agents.networks import utils
 from tf_agents.utils import nest_utils
 from reinforce import MaskedReinforceAgent
-from sac import DiscreteSacAgent,DiscreteSacCriticNetwork
+from sac import DiscreteSacAgent,ActorDistributionRnnNetwork
 from ppo import PPOAgent
 
 
@@ -63,9 +65,9 @@ class DeepAgent():
             value_net = value_network.ValueNetwork(env.obs_spec['obs'],fc_layer_params=value_net_fc_layers)
         return value_net #MaskSplitterNetwork(self.observation_and_action_constraint_splitter,value_net,passthrough_mask=True)
 
-    def create_critic_network(self,env,obs_fc_layer_units,action_fc_layer_units,joint_fc_layer_units):
-        critic_net = DiscreteSacCriticNetwork((env.obs_spec['obs'],env.act_spec),observation_fc_layer_params=obs_fc_layer_units,action_fc_layer_params=action_fc_layer_units,joint_fc_layer_params=joint_fc_layer_units)
-        return critic_net # MaskSplitterNetwork(self.observation_and_action_constraint_splitter,critic_net,passthrough_mask=True)
+    # def create_critic_network(self,env,obs_fc_layer_units,action_fc_layer_units,joint_fc_layer_units):
+    #     critic_net = DiscreteSacCriticNetwork((env.obs_spec['obs'],env.act_spec),observation_fc_layer_params=obs_fc_layer_units,action_fc_layer_params=action_fc_layer_units,joint_fc_layer_params=joint_fc_layer_units)
+    #     return critic_net # MaskSplitterNetwork(self.observation_and_action_constraint_splitter,critic_net,passthrough_mask=True)
 
     def learning_method(self,env,alpha,agent_arg):
         train_step_counter = tf.Variable(0)
@@ -191,19 +193,24 @@ class DeepAgent():
                 train_step_counter=train_step_counter,
             )
         elif agent_arg == 'SAC':
-            actor_fc_layers = (256, 256)
+            actor_fc_layers = (400, 300)
+            actor_output_fc_layers = (100,)
+            actor_lstm_size = (40,)
             critic_obs_fc_layers = None
             critic_action_fc_layers = None
-            critic_joint_fc_layers = (256, 256)
-            target_update_tau = 0.005
-            target_update_period = 1
+            critic_joint_fc_layers = (300,)
+            critic_output_fc_layers = (100,)
+            critic_lstm_size = (40,)
+            target_update_tau = 0.05
+            target_update_period = 5
             actor_learning_rate = alpha
             critic_learning_rate = alpha
             alpha_learning_rate = alpha
             td_errors_loss_fn = tf.math.squared_difference
             reward_scale_factor = 0.1
-            actor_net = self.create_actor_network(env,actor_fc_layers,True)
-            critic_net = self.create_critic_network(env,critic_obs_fc_layers, critic_action_fc_layers, critic_joint_fc_layers)
+            actor_net = ActorDistributionRnnNetwork(env.obs_spec['obs'],env.act_spec,input_fc_layer_params=actor_fc_layers,lstm_size=actor_lstm_size,output_fc_layer_params=actor_output_fc_layers,continuous_projection_net=tanh_normal_projection_network
+        .TanhNormalProjectionNetwork)
+            critic_net = critic_rnn_network.CriticRnnNetwork((env.obs_spec['obs'], env.act_spec),observation_fc_layer_params=critic_obs_fc_layers,action_fc_layer_params=critic_action_fc_layers,joint_fc_layer_params=critic_joint_fc_layers,lstm_size=critic_lstm_size,output_fc_layer_params=critic_output_fc_layers,kernel_initializer='glorot_uniform',last_kernel_initializer='glorot_uniform')
             self.agent = obs_selector(agent_arg)(
                 env.time_step_spec,
                 env.act_spec,
