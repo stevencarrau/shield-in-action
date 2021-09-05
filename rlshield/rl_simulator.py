@@ -184,11 +184,11 @@ class TF_Environment(SimulationExecutor):
         # obs = self.observe()
         self.step_count += 1
         if (self.is_done() and 'traps' in self._model.states[state].labels):
-            rew[self.cost_ind] += 1000
+            rew[self.cost_ind] += 0
         elif (self.is_done() and 'goal' in self._model.states[state].labels):
-            rew[self.gain_ind] += 1000
+            rew[self.gain_ind] += 10
         elif (self.is_done()):
-            rew[self.cost_ind] += 100
+            rew[self.cost_ind] += 0
         current_step = self.current_time_step(rew=self.cost_fn(rew))
         # self.replay_memory.add(action,self.cost_fn(rew),obs)
         return current_step
@@ -219,8 +219,8 @@ class TF_Environment(SimulationExecutor):
         for _ in range(total_nr_runs):
 
             # # Collect a few steps using collect_policy and save to the replay buffer.
-            collect_data(self,RL_agent.agent,  RL_agent.agent.collect_policy, buffer, collect_steps_per_iteration)
-            # collect_episode(self,RL_agent.agent.collect_policy,collect_steps_per_iteration,buffer)
+            # collect_data(self,RL_agent.agent,  RL_agent.agent.collect_policy, buffer, collect_steps_per_iteration)
+            collect_episode(self,RL_agent.agent.collect_policy,collect_steps_per_iteration,buffer)
             #
             # # Sample a batch of data from the buffer and update the agent's network.
 
@@ -234,7 +234,7 @@ class TF_Environment(SimulationExecutor):
 
 
 
-            step = int(RL_agent.agent.train_step_counter.numpy()/25) if agent_arg=='PPO' else RL_agent.agent.train_step_counter.numpy()
+            step = RL_agent.agent.train_step_counter.numpy()
             # step = self.episode_count
 
             if step % log_interval == 0:
@@ -265,7 +265,7 @@ class TF_Environment(SimulationExecutor):
 
     def cost_fn(self,rew_in):
         if len(rew_in)>1:
-            return rew_in[self.gain_ind]-rew_in[self.cost_ind]
+            return rew_in[self.gain_ind]#-rew_in[self.cost_ind]
         else:
             return -rew_in[0]
 

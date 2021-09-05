@@ -200,7 +200,7 @@ def main():
     # recorder.save(output_path, f"{videoname}")
     obs_type = args.obs_level
     valuations = args.valuations
-    result_fname = f"_{obs_type}_valuations" if valuations else f"_{obs_type}"
+    result_fname = f"_{obs_type}_valuations_{args.maxsteps}" if valuations else f"_{obs_type}"
     executor = TF_Environment(model, tracker,obs_length=1,maxsteps=args.maxsteps,obs_type=obs_type,valuations=valuations)
     eval_executor = TF_Environment(model,tracker,obs_length=1,maxsteps=args.maxsteps,obs_type=obs_type,valuations=valuations)
     print("Starting RL:\n")

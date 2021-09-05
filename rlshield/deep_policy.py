@@ -147,8 +147,8 @@ class DeepAgent():
                 td_errors_loss_fn=td_errors_loss_fn,
                 train_step_counter=train_step_counter)
         elif agent_arg == 'REINFORCE':
-            actor_fc_layers = (100,)
-            value_net_fc_layers = (100,)
+            actor_fc_layers = (5,)
+            value_net_fc_layers = (5,)
             learning_rate=alpha
             value_estimation_loss_coef = 0.2
             actor_net = self.create_actor_network(env,actor_fc_layers,True)
@@ -159,7 +159,7 @@ class DeepAgent():
                 actor_network=actor_net,
                 value_network=value_net,
                 value_estimation_loss_coef=value_estimation_loss_coef,
-                gamma=1.0,
+                gamma=0.95,
                 optimizer=tf.compat.v1.train.AdamOptimizer(learning_rate=learning_rate),
                 train_step_counter=train_step_counter,
                 observation_and_action_constraint_splitter=self.observation_and_action_constraint_splitter)
