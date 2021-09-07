@@ -102,6 +102,7 @@ def record_track(recorder,executor,agent,policy,maxsteps):
 class TF_Environment(SimulationExecutor):
     def __init__(self,model,shield,obs_length=1,valuations=False,obs_type='BELIEF_SUPPORT',maxsteps=100):
         super().__init__(model,shield)
+        self.shield_on = True
         self.obs_type = obs_type
         self.batch_size = 64
         action_spec_count = [self._model.get_nr_available_actions(i) for i in range(1,self._model.nr_states)]
@@ -130,6 +131,7 @@ class TF_Environment(SimulationExecutor):
         self.first = True
         self.maxsteps = maxsteps
 
+
     def restart(self):
         self._simulator.restart()
         self._shield.reset()
@@ -157,7 +159,10 @@ class TF_Environment(SimulationExecutor):
             r = tf.constant([self._simulator._report_rewards()[0]]) if len(self._simulator._report_rewards()) != 0 else tf.constant([0.])
         discount = tf.constant([1.])
         actions = self._simulator.available_actions()
-        safe_actions = self._shield.shielded_actions(range(len(actions)))
+        if self.shield_on:
+            safe_actions = self._shield.shielded_actions(range(len(actions)))
+        else:
+            safe_actions = actions
         mask = np.zeros(shape=(self.nr_actions,),dtype=bool)
         for i in safe_actions:
             mask[i] = True
@@ -244,7 +249,9 @@ class TF_Environment(SimulationExecutor):
                 avg_return = compute_avg_return(eval_env, RL_agent.agent, RL_agent.agent.policy, num_eval_episodes,max_steps=maxsteps)
                 print('step = {0}: Average Return = {1}'.format(step, avg_return))
                 returns.append((step,avg_return))
-                logfile.write('{0} {1}\n'.format(step,avg_return))
+            if step == 1000:
+                self.shield_on = True
+
         record_track(recorder,eval_env,RL_agent.agent,RL_agent.agent.policy,maxsteps)
         logfile.close()
         return returns
