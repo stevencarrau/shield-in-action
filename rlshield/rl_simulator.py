@@ -15,6 +15,7 @@ from tf_agents.utils import common
 import tf_agents
 from deep_policy import DeepAgent, ReplayMemory
 import re
+import tf_agents
 
 from model_simulator import SimulationExecutor
 import logging
@@ -103,6 +104,7 @@ class TF_Environment(SimulationExecutor):
     def __init__(self,model,shield,obs_length=1,valuations=False,obs_type='BELIEF_SUPPORT',maxsteps=100):
         super().__init__(model,shield)
         self.shield_on = True
+        self.decay = 0
         self.obs_type = obs_type
         self.batch_size = 64
         action_spec_count = [self._model.get_nr_available_actions(i) for i in range(1,self._model.nr_states)]
@@ -162,7 +164,10 @@ class TF_Environment(SimulationExecutor):
         if self.shield_on:
             safe_actions = self._shield.shielded_actions(range(len(actions)))
         else:
-            safe_actions = actions
+            if np.random.random(1)[0] > self.decay:
+                safe_actions = self._shield.shielded_actions(range(len(actions))) ## Shield on
+            else:
+                safe_actions = actions
         mask = np.zeros(shape=(self.nr_actions,),dtype=bool)
         for i in safe_actions:
             mask[i] = True
@@ -203,6 +208,7 @@ class TF_Environment(SimulationExecutor):
         self.maxsteps = maxsteps
         gamma = 1.0
         alpha = 3e-2
+        self.alpha = alpha
         log_interval = 10
         num_eval_episodes = eval_episodes
         eval_interval = eval_interval
@@ -220,6 +226,8 @@ class TF_Environment(SimulationExecutor):
         iterator = iter(dataset)
         RL_agent.agent.train = common.function(RL_agent.agent.train)
         returns = [(0,avg_return)]
+        # rand_pol = tf_agents.policies.random_tf_policy.RandomTFPolicy(self.time_step_spec,self.act_spec,observation_and_action_constraint_splitter=RL_agent.observation_and_action_constraint_splitter)
+        # print(compute_avg_return(eval_env,RL_agent.agent,rand_pol,100,max_steps=maxsteps))
 
         for _ in range(total_nr_runs):
 
@@ -249,8 +257,9 @@ class TF_Environment(SimulationExecutor):
                 avg_return = compute_avg_return(eval_env, RL_agent.agent, RL_agent.agent.policy, num_eval_episodes,max_steps=maxsteps)
                 print('step = {0}: Average Return = {1}'.format(step, avg_return))
                 returns.append((step,avg_return))
-            if step == 1000:
+            if step > 1000:
                 self.shield_on = True
+                self.decay += self.alpha
 
         record_track(recorder,eval_env,RL_agent.agent,RL_agent.agent.policy,maxsteps)
         logfile.close()
