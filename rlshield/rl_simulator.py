@@ -110,7 +110,7 @@ class TF_Environment(SimulationExecutor):
         action_spec_count = [self._model.get_nr_available_actions(i) for i in range(1,self._model.nr_states)]
         self.nr_actions = max(action_spec_count)
         self.valuations = valuations
-        if valuations:
+        if valuations or obs_type == 'STACK':
             self.keywords = self.get_observation_keywords()
             self.obs_length = len(self.keywords)
             obs_shape = np.array(self.observe()).shape
@@ -177,7 +177,7 @@ class TF_Environment(SimulationExecutor):
         #
         # print(self._simulator._report_state())
         # observation = {'obs':tf.constant([self.replay_memory.getObs()],dtype='int32'),'mask':mask}
-        observation = {'obs':tf.constant([self.observe()],dtype='int32'),'mask':mask}
+        observation = {'obs':tf.constant([self.observe(mask)],dtype='int32'),'mask':mask}
         if self.first:
             self.first = False
             return ts.TimeStep(reward=r, observation=observation, discount=discount,step_type=tf.constant([ts.StepType.FIRST]))
@@ -265,19 +265,26 @@ class TF_Environment(SimulationExecutor):
         logfile.close()
         return returns
 
-    def observe(self):
-        if self.valuations:
-            return np.array(self.get_observation_valuation(),dtype=int)
+    def observe(self,mask=None):
+        if self.obs_type == 'STATE_LEVEL':
+            # if self.valuations:
+            #     return np.array(self.get_observation_valuation(), dtype=int)
+            return [self._simulator._report_state()]
+        elif self.obs_type == 'BELIEF_SUPPORT':
+            support = np.zeros((self._model.nr_states,),dtype=int)
+            for i in self._shield.list_support():
+                support[i] = 1
+            return support.tolist()
+        elif self.obs_type == "STACK":
+            support = np.zeros((self._model.nr_states,), dtype=int)
+            for i in self._shield.list_support():
+                support[i] = 1
+            mask = np.ones((self.nr_actions,),dtype=int) if mask is None else np.array(mask.numpy(),dtype=int).reshape(-1)
+            return np.hstack((np.array(self.get_observation_valuation(), dtype=int),support,mask))
         else:
-            if self.obs_type == 'STATE_LEVEL':
-                return [self._simulator._report_state()]
-            elif self.obs_type == 'BELIEF_SUPPORT':
-                support = np.zeros((self._model.nr_states,),dtype=int)
-                for i in self._shield.list_support():
-                    support[i] = 1
-                return support.tolist()
-            else:
-                return [self._simulator._report_observation()]
+            if self.valuations:
+                return np.array(self.get_observation_valuation(), dtype=int)
+            return [self._simulator._report_observation()]
 
     def cost_fn(self,rew_in):
         if len(rew_in)>1:
