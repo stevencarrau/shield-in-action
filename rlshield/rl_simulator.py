@@ -27,7 +27,7 @@ def collect_episode(env,policy,num_episodes,buffer):
     while episode_counter < num_episodes:
         time_step = env.current_time_step()
         action_step = policy.action(time_step)
-        next_time_step = env.step(int(action_step.action))
+        next_time_step = env.step(env.apply_action(action_step.action))
         traj = trajectory.from_transition(time_step,action_step,next_time_step)
         buffer.add_batch(traj)
         if next_time_step.step_type == ts.StepType.LAST:
@@ -39,7 +39,7 @@ def collect_step(env,agent,policy,buffer):
     actions = env._simulator.available_actions()
     safe_actions = env._shield.shielded_actions(range(len(actions)))
     action_step = policy.action(time_step)
-    next_time_step = env.step(int(action_step.action))
+    next_time_step = env.step(env.apply_action(action_step.action))
     traj = trajectory.from_transition(time_step,action_step,next_time_step)
     buffer.add_batch(traj)
 
@@ -57,7 +57,7 @@ def compute_avg_return(env, agent,policy, num_episodes=10,max_steps=100):
             actions = env._simulator.available_actions()
             safe_actions = env._shield.shielded_actions(range(len(actions)))
             action_step = policy.action(time_step)
-            time_step = env.step(int(action_step.action))
+            time_step = env.step(env.apply_action(action_step.action))
             episode_return += time_step.reward[0]
             steps += 1
             if steps >= max_steps:
@@ -79,7 +79,7 @@ def record_track(recorder,executor,agent,policy,maxsteps):
         logger.debug(f"Number of actions: {actions}. Safe action indices: {safe_actions}")
         time_step = executor.current_time_step()
         action_step = policy.action(time_step) #agent(policy,time_step, allowed_actions=safe_actions)
-        action = int(action_step.action)
+        action = executor.apply_action(action_step.action)
         executor._simulator.step(action)
         state = executor._simulator._report_state()
         executor._shield.track(action, executor._model.get_observation(state))
@@ -101,14 +101,22 @@ def record_track(recorder,executor,agent,policy,maxsteps):
     recorder.end_path(finished)
 
 class TF_Environment(SimulationExecutor):
-    def __init__(self,model,shield,obs_length=1,valuations=False,obs_type='BELIEF_SUPPORT',maxsteps=100):
+    def __init__(self,model,shield,obs_length=1,valuations=False,obs_type='BELIEF_SUPPORT',maxsteps=100,goal_value=1000):
         super().__init__(model,shield)
         self.shield_on = True
-        self.decay = 0
+        self.decay = 1
         self.obs_type = obs_type
         self.batch_size = 64
-        action_spec_count = [self._model.get_nr_available_actions(i) for i in range(1,self._model.nr_states)]
-        self.nr_actions = max(action_spec_count)
+        self.goal_value = goal_value
+        action_keywords = set()
+        for s_i in range(self._model.nr_states):
+            n_act = self._model.get_nr_available_actions(s_i)
+            for a_i in range(n_act):
+                action_keywords = action_keywords.union(self._model.choice_labeling.get_labels_of_choice(self._model.get_choice_index(s_i,a_i)))
+        # action_spec_count = [self._model.get_nr_available_actions(i) for i in range(1,self._model.nr_states)]
+        self.action_indices = dict([[j,i] for i,j in enumerate(action_keywords)])
+        self.act_keywords = dict([[self.action_indices[i],i] for i in self.action_indices])
+        self.nr_actions = len(action_keywords)
         self.valuations = valuations
         if valuations:
             self.keywords = self.get_observation_keywords()
@@ -116,7 +124,7 @@ class TF_Environment(SimulationExecutor):
             obs_shape = np.array(self.observe()).shape
         else:
             self.obs_length = obs_length
-            obs_shape  =np.array(self.observe()).shape
+            obs_shape = np.array(self.observe()).shape
         self.act_spec = tf_agents.specs.BoundedTensorSpec(dtype='int32', name='action', minimum=0, maximum=self.nr_actions - 1,shape=tf.TensorShape(()))
         self.disc_spec = tf_agents.specs.BoundedTensorSpec(name='discount', dtype='float32', minimum=0, maximum=1,shape=tf.TensorShape(()))
         self.obs_spec = {'obs': tf_agents.specs.TensorSpec(name='observation', dtype='int32', shape=tf.TensorShape(obs_shape)),'mask': tf_agents.specs.TensorSpec(shape=(self.nr_actions,), dtype='bool',name='mask')}
@@ -164,12 +172,17 @@ class TF_Environment(SimulationExecutor):
         if self.shield_on:
             safe_actions = self._shield.shielded_actions(range(len(actions)))
         else:
-            if np.random.random(1)[0] > self.decay:
-                safe_actions = self._shield.shielded_actions(range(len(actions))) ## Shield on
-            else:
-                safe_actions = actions
+            # if np.random.random(1)[0] > self.decay:
+            #     safe_actions = self._shield.shielded_actions(range(len(actions))) ## Shield on
+            # else:
+            safe_actions = actions
+
+        if len(self._model.choice_labeling.get_labels_of_choice(self._model.get_choice_index(self._simulator._report_state(),0)))==0:
+            mask_inds = [0]
+        else:
+            mask_inds = [self.action_indices[self._model.choice_labeling.get_labels_of_choice(self._model.get_choice_index(self._simulator._report_state(),a_i)).pop()] for a_i in safe_actions]
         mask = np.zeros(shape=(self.nr_actions,),dtype=bool)
-        for i in safe_actions:
+        for i in mask_inds:
             mask[i] = True
         mask = tf.logical_and(tf.ones(shape=(1,self.nr_actions),dtype=tf.bool),mask)
         # obs_in = []
@@ -194,13 +207,12 @@ class TF_Environment(SimulationExecutor):
         # obs = self.observe()
         self.step_count += 1
         if (self.is_done() and 'traps' in self._model.states[state].labels):
-            rew[self.cost_ind] += 1000
+            rew[self.cost_ind] += self.goal_value if self.goal_value > 100 else 0
         elif (self.is_done() and 'goal' in self._model.states[state].labels):
-            rew[self.gain_ind] += 1000
+            rew[self.gain_ind] += self.goal_value
         elif (self.is_done()):
-            rew[self.cost_ind] += 100
+            rew[self.cost_ind] += 0
         current_step = self.current_time_step(rew=self.cost_fn(rew))
-        # self.replay_memory.add(action,self.cost_fn(rew),obs)
         return current_step
 
     def simulate_deep_RL(self, recorder, total_nr_runs=5,eval_interval=1000,eval_episodes=10, maxsteps=30,eval_env=None,agent_arg='DQN',log_name=None):
@@ -226,22 +238,17 @@ class TF_Environment(SimulationExecutor):
         iterator = iter(dataset)
         RL_agent.agent.train = common.function(RL_agent.agent.train)
         returns = [(0,avg_return)]
-        # rand_pol = tf_agents.policies.random_tf_policy.RandomTFPolicy(self.time_step_spec,self.act_spec,observation_and_action_constraint_splitter=RL_agent.observation_and_action_constraint_splitter)
-        # print(compute_avg_return(eval_env,RL_agent.agent,rand_pol,100,max_steps=maxsteps))
+        rand_pol = tf_agents.policies.random_tf_policy.RandomTFPolicy(self.time_step_spec,self.act_spec,observation_and_action_constraint_splitter=RL_agent.observation_and_action_constraint_splitter)
+        print(f'Random policy return: {compute_avg_return(eval_env,RL_agent.agent,rand_pol,10,max_steps=maxsteps)}')
 
         for _ in range(total_nr_runs):
-
-            # # Collect a few steps using collect_policy and save to the replay buffer.
-            # collect_data(self,RL_agent.agent,  RL_agent.agent.collect_policy, buffer, collect_steps_per_iteration)
-            collect_episode(self,RL_agent.agent.collect_policy,collect_steps_per_iteration,buffer)
-            #
-            # # Sample a batch of data from the buffer and update the agent's network.
-
             if agent_arg == 'REINFORCE':
+                collect_episode(self,RL_agent.agent.collect_policy,collect_steps_per_iteration,buffer)
                 experience = buffer.gather_all()
                 train_loss = RL_agent.agent.train(experience).loss
                 buffer.clear()
             else:
+                collect_data(self,RL_agent.agent,  RL_agent.agent.collect_policy, buffer, collect_steps_per_iteration)
                 experience, unused_info = next(iterator)
                 train_loss = RL_agent.agent.train(experience).loss
 
@@ -257,9 +264,6 @@ class TF_Environment(SimulationExecutor):
                 avg_return = compute_avg_return(eval_env, RL_agent.agent, RL_agent.agent.policy, num_eval_episodes,max_steps=maxsteps)
                 print('step = {0}: Average Return = {1}'.format(step, avg_return))
                 returns.append((step,avg_return))
-            if step > 1000:
-                self.shield_on = True
-                self.decay += self.alpha
 
         record_track(recorder,eval_env,RL_agent.agent,RL_agent.agent.policy,maxsteps)
         logfile.close()
@@ -301,6 +305,14 @@ class TF_Environment(SimulationExecutor):
         # if 'turn' in keywords:
         #     keywords.remove('turn')
         return keywords
+
+    def get_choice_labels(self):
+        return [self._model.choice_labeling.get_labels_of_choice(self._model.get_choice_index(self._simulator._report_state(),a_i)).pop() for a_i in range(self._simulator.nr_available_actions())]
+
+    def apply_action(self,act_in):
+        act_keyword = self.act_keywords[int(act_in)]
+        choice_list = self.get_choice_labels()
+        return choice_list.index(act_keyword)
 
 def json_to_int(i):
     try:

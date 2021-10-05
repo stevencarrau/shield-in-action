@@ -94,6 +94,7 @@ def main():
     parser.add_argument('--learning_method',default='PPO')
     parser.add_argument('--eval-interval', type=int,default=100)
     parser.add_argument('--eval-episodes', type=int,default=5)
+    parser.add_argument('--goal-value',type=int,default=10)
 
     args = parser.parse_args()
     logging.basicConfig(filename=f'{args.logfile}', filemode='w', level=logging.INFO)
@@ -199,8 +200,10 @@ def main():
     # executor.simulate(recorder, total_nr_runs=1, nr_good_runs=1, maxsteps=args.maxsteps)
     # recorder.save(output_path, f"{videoname}")
     obs_type = args.obs_level
-    valuations = args.valuations
-    result_fname = f"decayed_switching"
+    valuations = False if obs_type == "BELIEF_SUPPORT" else True
+    result_fname =  f"_{obs_type}"
+    args.max_runs = 5000 if args.learning_method == "REINFORCE" else args.max_runs
+    args.eval_interval = 100 if args.learning_method == "REINFORCE" else args.eval_interval
     executor = TF_Environment(model, tracker,obs_length=1,maxsteps=args.maxsteps,obs_type=obs_type,valuations=valuations)
     eval_executor = TF_Environment(model,tracker,obs_length=1,maxsteps=args.maxsteps,obs_type=obs_type,valuations=valuations)
     print("Starting RL:\n")
