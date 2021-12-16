@@ -1,5 +1,6 @@
 import argparse
 import copy
+import time
 
 import numpy as np
 import stormpy as sp
@@ -159,7 +160,9 @@ def main():
     #    raise RuntimeError("Winning Region does not agree with Model")
 
     if compute_shield:
+        shield_in = time.time()
         winning_region = compute_winning_region(model, raw_formula, initial)
+        print(time.time()-shield_in)
 
     if winning_region is not None:
         otf_shield = construct_otf_shield(model, winning_region)
