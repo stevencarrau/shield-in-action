@@ -202,13 +202,13 @@ class TF_Environment(SimulationExecutor):
             return ts.TimeStep(reward=r, observation=observation,discount=discount, step_type=tf.constant([ts.StepType.MID]))
 
     def step(self,action):
-        state, rew = self._simulator.step(action)
+        state, rew, labels = self._simulator.step(action)
         self._shield.track(action, self._simulator._report_observation())
         # obs = self.observe()
         self.step_count += 1
-        if (self.is_done() and 'traps' in self._model.states[state].labels):
+        if (self.is_done() and 'traps' in labels):
             rew[self.cost_ind] += self.goal_value if self.goal_value > 100 else 0
-        elif (self.is_done() and 'goal' in self._model.states[state].labels):
+        elif (self.is_done() and 'goal' in labels):
             rew[self.gain_ind] += self.goal_value
         elif (self.is_done()):
             rew[self.cost_ind] += 0
