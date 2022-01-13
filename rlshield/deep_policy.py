@@ -30,6 +30,8 @@ def obs_selector(args='DQN'):
         return tf_agents.agents.dqn.dqn_agent.DqnAgent
     elif args == 'DDQN':
         return tf_agents.agents.dqn.dqn_agent.DdqnAgent
+    if args == 'DRQN':
+        return tf_agents.agents.dqn.dqn_agent.DqnAgent
     elif args == 'PPO':
         return PPOAgent
     elif args == 'DDPG':
@@ -74,6 +76,20 @@ class DeepAgent():
         optimizer = tf.keras.optimizers.Adam(learning_rate=alpha)
         if agent_arg == 'DQN':
             layer_params = (100,)
+            self.fc_layer_params = layer_params
+            dense_layers = [dense_layer(num_units) for num_units in self.fc_layer_params]
+            q_values_layer = tf.keras.layers.Dense(env.nr_actions, activation=None,
+                                                   kernel_initializer=tf.keras.initializers.RandomUniform(minval=-0.03,
+                                                                                                          maxval=0.03),
+                                                   bias_initializer=tf.keras.initializers.Constant(-0.2))
+            q_net = tf_agents.networks.sequential.Sequential(dense_layers + [q_values_layer])
+            self.agent = obs_selector(agent_arg)(env.time_step_spec, env.act_spec, q_network=q_net, optimizer=optimizer,
+                             td_errors_loss_fn=tf_agents.utils.common.element_wise_squared_loss,
+                             train_step_counter=train_step_counter,
+                             observation_and_action_constraint_splitter=self.observation_and_action_constraint_splitter)
+        elif agent_arg == 'DQN':
+            layer_params = (100,)
+            lstm_size = (20,)
             self.fc_layer_params = layer_params
             dense_layers = [dense_layer(num_units) for num_units in self.fc_layer_params]
             q_values_layer = tf.keras.layers.Dense(env.nr_actions, activation=None,

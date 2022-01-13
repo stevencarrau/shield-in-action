@@ -49,6 +49,7 @@ def collect_data(env,agent,policy,buffer,steps):
 
 def compute_avg_return(env, agent,policy, num_episodes=10,max_steps=100):
     total_return = 0.0
+    episodes = []
     for _ in range(num_episodes):
         time_step = env.reset()
         episode_return = 0.0
@@ -63,8 +64,10 @@ def compute_avg_return(env, agent,policy, num_episodes=10,max_steps=100):
             if steps >= max_steps:
                 break
         total_return += episode_return
+        episodes.append(episode_return.numpy())
     avg_return = total_return / num_episodes
-    return avg_return.numpy()
+    std_dev = np.std(np.array(episodes))
+    return avg_return.numpy(),avg_return.numpy()+std_dev,avg_return.numpy()-std_dev
 
 def record_track(recorder,executor,agent,policy,maxsteps):
     state = executor._simulator.restart()
@@ -237,7 +240,7 @@ class TF_Environment(SimulationExecutor):
         dataset = buffer.as_dataset(num_parallel_calls=1,sample_batch_size=64,num_steps=2).prefetch(3)
         iterator = iter(dataset)
         RL_agent.agent.train = common.function(RL_agent.agent.train)
-        returns = [(0,avg_return)]
+        returns = [(0,avg_return[0],avg_return[1],avg_return[2])]
         rand_pol = tf_agents.policies.random_tf_policy.RandomTFPolicy(self.time_step_spec,self.act_spec,observation_and_action_constraint_splitter=RL_agent.observation_and_action_constraint_splitter)
         print(f'Random policy return: {compute_avg_return(eval_env,RL_agent.agent,rand_pol,10,max_steps=maxsteps)}')
 
@@ -263,7 +266,7 @@ class TF_Environment(SimulationExecutor):
             if step % eval_interval == 0:
                 avg_return = compute_avg_return(eval_env, RL_agent.agent, RL_agent.agent.policy, num_eval_episodes,max_steps=maxsteps)
                 print('step = {0}: Average Return = {1}'.format(step, avg_return))
-                returns.append((step,avg_return))
+                returns.append((step,avg_return[0],avg_return[1],avg_return[2]))
 
         record_track(recorder,eval_env,RL_agent.agent,RL_agent.agent.policy,maxsteps)
         logfile.close()
