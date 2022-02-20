@@ -1,13 +1,13 @@
 source ~/storm_env/bin/activate
 
-declare -i MAX_STEPS=100000
+declare -i MAX_STEPS=10000
 declare -i EVAL_EPISODES=5
-declare -i EVAL_INTERVAL=1000
+declare -i EVAL_INTERVAL=100
 declare -a hold_ind=("0" "1" "2" "3" "4" "5")
 declare -a Environments=("avoid" "evade" "intercept" "obstacle" "refuel" "rocks")
 declare -a Constants=("N=6,RADIUS=3" "N=6,RADIUS=2" "N=7,RADIUS=1" "N=6" "N=6,ENERGY=8" "N=6")
 declare -a MaxRewards=("1000" "10" "1000" "1000" "10" "10")
-declare -a LearningMethods=("DQN" "DDQN" "REINFORCE" "SAC" "PPO")
+declare -a LearningMethods=("REINFORCE")
 
 
 for i in "${!hold_ind[@]}"; do
