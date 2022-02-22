@@ -96,6 +96,7 @@ def main():
     parser.add_argument('--eval-interval', type=int,default=100)
     parser.add_argument('--eval-episodes', type=int,default=5)
     parser.add_argument('--goal-value',type=int,default=10)
+    parser.add_argument('--replay-buffer-length',type=int,default=0)
 
     args = parser.parse_args()
     logging.basicConfig(filename=f'{args.logfile}', filemode='w', level=logging.INFO)
@@ -204,7 +205,7 @@ def main():
     # recorder.save(output_path, f"{videoname}")
     obs_type = args.obs_level
     valuations = False if obs_type == "BELIEF_SUPPORT" else True
-    result_fname =  f"_{obs_type}"
+    result_fname =  f"_{obs_type}_MemLength_{args.replay_buffer_length}"
     # args.max_runs = 5000 if args.learning_method == "REINFORCE" else args.max_runs
     # args.eval_interval = 100 if args.learning_method == "REINFORCE" else args.eval_interval
     executor = TF_Environment(model, tracker,obs_length=1,maxsteps=args.maxsteps,obs_type=obs_type,valuations=valuations)

@@ -104,7 +104,7 @@ def record_track(recorder,executor,agent,policy,maxsteps):
     recorder.end_path(finished)
 
 class TF_Environment(SimulationExecutor):
-    def __init__(self,model,shield,obs_length=1,valuations=False,obs_type='BELIEF_SUPPORT',maxsteps=100,goal_value=1000):
+    def __init__(self,model,shield,obs_length=1,valuations=False,obs_type='BELIEF_SUPPORT',maxsteps=100,goal_value=1000,replay_buffer_length=5):
         super().__init__(model,shield)
         self.shield_on = True
         self.decay = 1
@@ -128,6 +128,10 @@ class TF_Environment(SimulationExecutor):
         else:
             self.obs_length = obs_length
             obs_shape = np.array(self.observe()).shape
+        if replay_buffer_length > 0:
+            config = {'mem_size':replay_buffer_length,'obs_dims':obs_shape[0]}
+            self.replayMemory = ReplayMemory(config)
+            obs_shape = self.replayMemory.getObs().shape
         self.act_spec = tf_agents.specs.BoundedTensorSpec(dtype='int32', name='action', minimum=0, maximum=self.nr_actions - 1,shape=tf.TensorShape(()))
         self.disc_spec = tf_agents.specs.BoundedTensorSpec(name='discount', dtype='float32', minimum=0, maximum=1,shape=tf.TensorShape(()))
         self.obs_spec = {'obs': tf_agents.specs.TensorSpec(name='observation', dtype='int32', shape=tf.TensorShape(obs_shape)),'mask': tf_agents.specs.TensorSpec(shape=(self.nr_actions,), dtype='bool',name='mask')}
@@ -145,6 +149,7 @@ class TF_Environment(SimulationExecutor):
         self.maxsteps = maxsteps
 
 
+
     def restart(self):
         self._simulator.restart()
         self._shield.reset()
@@ -155,6 +160,7 @@ class TF_Environment(SimulationExecutor):
 
     def reset(self):
         self.restart()
+        self.replayMemory.reset(self.observe())
         # self._simulator.step(0)
         # self._shield.track(0,self._simulator._report_observation())
         return self.current_time_step()
@@ -193,7 +199,10 @@ class TF_Environment(SimulationExecutor):
         #
         # print(self._simulator._report_state())
         # observation = {'obs':tf.constant([self.replay_memory.getObs()],dtype='int32'),'mask':mask}
-        observation = {'obs':tf.constant([self.observe()],dtype='int32'),'mask':mask}
+        if self.replayMemory:
+            observation = {'obs':tf.constant([self.replayMemory.getObs()],dtype='int32'),'mask':mask}
+        else:
+            observation = {'obs':tf.constant([self.observe()],dtype='int32'),'mask':mask}
         if self.first:
             self.first = False
             return ts.TimeStep(reward=r, observation=observation, discount=discount,step_type=tf.constant([ts.StepType.FIRST]))
@@ -216,6 +225,8 @@ class TF_Environment(SimulationExecutor):
         elif (self.is_done()):
             rew[self.cost_ind] += 0
         current_step = self.current_time_step(rew=self.cost_fn(rew))
+        if self.replayMemory:
+            self.replayMemory.add(action,self.cost_fn(rew),self.observe())
         return current_step
 
     def simulate_deep_RL(self, recorder, total_nr_runs=5,eval_interval=1000,eval_episodes=10, maxsteps=30,eval_env=None,agent_arg='DQN',log_name=None):

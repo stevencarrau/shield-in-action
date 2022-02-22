@@ -353,19 +353,16 @@ class ActorNetwork(network.Network):
 class ReplayMemory:
     def __init__(self, config):
         self.config = config
-        self.actions = np.empty((self.config['mem_size'] - 1), dtype=np.int32)
-        self.rewards = np.empty((self.config['mem_size'] - 1), dtype=np.int32)
-        self.observations = np.empty((self.config['mem_size'], self.config['obs_dims']), dtype=np.int32)
-        self.count = 0
-        self.current = 0
+        self.reset(None)
 
     def reset(self, obs):
-        self.actions = np.empty((self.config['mem_size'] - 1), dtype=np.int32)
-        self.rewards = np.empty((self.config['mem_size'] - 1), dtype=np.int32)
-        self.observations = np.empty((self.config['mem_size'], self.config['obs_dims']), dtype=np.int32)
+        self.actions = np.zeros((self.config['mem_size'] - 1), dtype=np.int32)
+        self.rewards = np.zeros((self.config['mem_size'] - 1), dtype=np.int32)
+        self.observations = -99*np.ones((self.config['mem_size'], self.config['obs_dims']), dtype=np.int32)
         self.count = 0
         self.current = 0
-        self.initial_add(obs)
+        if obs is not None:
+            self.initial_add(obs)
 
     def initial_add(self, obs):
         self.observations[-1, :] = obs
