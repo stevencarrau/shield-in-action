@@ -9,7 +9,7 @@ from tf_agents.replay_buffers import episodic_replay_buffer
 from itertools import chain
 from tf_agents.agents.sac import tanh_normal_projection_network
 from tf_agents.agents.ddpg import critic_rnn_network
-from tf_agents.networks import sequential,actor_distribution_network,actor_distribution_rnn_network,value_rnn_network,value_network
+from tf_agents.networks import sequential, actor_distribution_network, actor_distribution_rnn_network,value_rnn_network, value_network
 from tf_agents.networks.mask_splitter_network import MaskSplitterNetwork
 from tf_agents.agents.ddpg.critic_network import CriticNetwork
 from tf_agents.utils import common
@@ -17,13 +17,40 @@ from tf_agents.networks import encoding_network
 from tf_agents.networks import network
 from tf_agents.networks import utils
 from tf_agents.utils import nest_utils
+from tf_agents.keras_layers import dynamic_unroll_layer
 from reinforce import MaskedReinforceAgent
-from sac import DiscreteSacAgent,ActorDistributionRnnNetwork
+from sac import DiscreteSacAgent, ActorDistributionRnnNetwork
 from ppo import PPOAgent
+
+KERAS_LSTM_FUSED = 2
+
+fused_lstm_cell = functools.partial(
+    tf.keras.layers.LSTMCell, implementation=KERAS_LSTM_FUSED)
+
+logits = functools.partial(tf.keras.layers.Dense,activation=None,kernel_initializer=tf.random_uniform_initializer(minval=-0.03, maxval=0.03),bias_initializer=tf.constant_initializer(-0.2))
+
+
+def create_recurrent_network(
+        input_fc_layer_units,
+        lstm_size,
+        output_fc_layer_units,
+        num_actions):
+    rnn_cell = tf.keras.layers.StackedRNNCells(
+        [fused_lstm_cell(s) for s in lstm_size])
+    q_values_layer = tf.keras.layers.Dense(num_actions, activation=None,
+                          kernel_initializer=tf.keras.initializers.RandomUniform(minval=-0.03,
+                                                                                 maxval=0.03),
+                          bias_initializer=tf.keras.initializers.Constant(-0.2))
+    dense_layers = [dense_layer(num_units) for num_units in input_fc_layer_units]+ [dynamic_unroll_layer.DynamicUnroll(rnn_cell)]+ [dense_layer(num_units) for num_units in output_fc_layer_units]
+    tf_agents.networks.sequential.Sequential(dense_layers + [q_values_layer])
+    return tf_agents.networks.sequential.Sequential(dense_layers + [q_values_layer])
 
 
 def dense_layer(num_units):
-    return tf.keras.layers.Dense(num_units,activation=tf.keras.activations.relu,kernel_initializer=tf.keras.initializers.VarianceScaling(scale=2.0, mode='fan_in', distribution='truncated_normal'))
+    return tf.keras.layers.Dense(num_units, activation=tf.keras.activations.relu,
+                                 kernel_initializer=tf.keras.initializers.VarianceScaling(scale=2.0, mode='fan_in',
+                                                                                          distribution='truncated_normal'))
+
 
 def obs_selector(args='DQN'):
     if args == 'DQN':
@@ -43,35 +70,36 @@ def obs_selector(args='DQN'):
     elif args == 'SAC':
         return DiscreteSacAgent
 
+
 class DeepAgent():
 
-    def __init__(self,env,alpha,agent_arg='PPO'):
+    def __init__(self, env, alpha, agent_arg='PPO'):
         self.alpha = alpha
-        self.learning_method(env,alpha,agent_arg)
+        self.learning_method(env, alpha, agent_arg)
 
-    def observation_and_action_constraint_splitter(self,observation):
+    def observation_and_action_constraint_splitter(self, observation):
         return observation['obs'], observation['mask']
 
     def create_actor_network(self, env, actor_fc_layers, distribution_out=True):
         if distribution_out:
-            actor_net = actor_distribution_network.ActorDistributionNetwork(env.obs_spec['obs'],env.act_spec,fc_layer_params=actor_fc_layers)
+            actor_net = actor_distribution_network.ActorDistributionNetwork(env.obs_spec['obs'], env.act_spec,
+                                                                            fc_layer_params=actor_fc_layers)
         else:
-            actor_net = ActorNetwork(env.obs_spec['obs'],env.act_spec,fc_layer_params=actor_fc_layers)
-        return actor_net #MaskSplitterNetwork(self.observation_and_action_constraint_splitter,actor_net,passthrough_mask=True)
+            actor_net = ActorNetwork(env.obs_spec['obs'], env.act_spec, fc_layer_params=actor_fc_layers)
+        return actor_net  # MaskSplitterNetwork(self.observation_and_action_constraint_splitter,actor_net,passthrough_mask=True)
 
-
-    def create_value_network(self,env,value_net_fc_layers,distribution_out=True):
+    def create_value_network(self, env, value_net_fc_layers, distribution_out=True):
         if distribution_out:
-            value_net = value_network.ValueNetwork(env.obs_spec['obs'],fc_layer_params=value_net_fc_layers)
+            value_net = value_network.ValueNetwork(env.obs_spec['obs'], fc_layer_params=value_net_fc_layers)
         else:
-            value_net = value_network.ValueNetwork(env.obs_spec['obs'],fc_layer_params=value_net_fc_layers)
-        return value_net #MaskSplitterNetwork(self.observation_and_action_constraint_splitter,value_net,passthrough_mask=True)
+            value_net = value_network.ValueNetwork(env.obs_spec['obs'], fc_layer_params=value_net_fc_layers)
+        return value_net  # MaskSplitterNetwork(self.observation_and_action_constraint_splitter,value_net,passthrough_mask=True)
 
     # def create_critic_network(self,env,obs_fc_layer_units,action_fc_layer_units,joint_fc_layer_units):
     #     critic_net = DiscreteSacCriticNetwork((env.obs_spec['obs'],env.act_spec),observation_fc_layer_params=obs_fc_layer_units,action_fc_layer_params=action_fc_layer_units,joint_fc_layer_params=joint_fc_layer_units)
     #     return critic_net # MaskSplitterNetwork(self.observation_and_action_constraint_splitter,critic_net,passthrough_mask=True)
 
-    def learning_method(self,env,alpha,agent_arg):
+    def learning_method(self, env, alpha, agent_arg):
         train_step_counter = tf.Variable(0)
         optimizer = tf.keras.optimizers.Adam(learning_rate=alpha)
         if agent_arg == 'DQN':
@@ -84,23 +112,23 @@ class DeepAgent():
                                                    bias_initializer=tf.keras.initializers.Constant(-0.2))
             q_net = tf_agents.networks.sequential.Sequential(dense_layers + [q_values_layer])
             self.agent = obs_selector(agent_arg)(env.time_step_spec, env.act_spec, q_network=q_net, optimizer=optimizer,
-                             td_errors_loss_fn=tf_agents.utils.common.element_wise_squared_loss,
-                             train_step_counter=train_step_counter,
-                             observation_and_action_constraint_splitter=self.observation_and_action_constraint_splitter)
-        elif agent_arg == 'DQN':
-            layer_params = (100,)
-            lstm_size = (20,)
-            self.fc_layer_params = layer_params
-            dense_layers = [dense_layer(num_units) for num_units in self.fc_layer_params]
-            q_values_layer = tf.keras.layers.Dense(env.nr_actions, activation=None,
-                                                   kernel_initializer=tf.keras.initializers.RandomUniform(minval=-0.03,
-                                                                                                          maxval=0.03),
-                                                   bias_initializer=tf.keras.initializers.Constant(-0.2))
-            q_net = tf_agents.networks.sequential.Sequential(dense_layers + [q_values_layer])
+                                                 td_errors_loss_fn=tf_agents.utils.common.element_wise_squared_loss,
+                                                 train_step_counter=train_step_counter,
+                                                 observation_and_action_constraint_splitter=self.observation_and_action_constraint_splitter)
+        elif agent_arg == 'DRQN':
+            input_fc_layer_params = (50,)
+            lstm_size = (10,)
+            output_fc_layer_params = (20,)
+            # self.fc_layer_params = layer_params
+            q_net = create_recurrent_network(
+                input_fc_layer_params,
+                lstm_size,
+                output_fc_layer_params,
+                env.nr_actions)
             self.agent = obs_selector(agent_arg)(env.time_step_spec, env.act_spec, q_network=q_net, optimizer=optimizer,
-                             td_errors_loss_fn=tf_agents.utils.common.element_wise_squared_loss,
-                             train_step_counter=train_step_counter,
-                             observation_and_action_constraint_splitter=self.observation_and_action_constraint_splitter)
+                                                 td_errors_loss_fn=tf_agents.utils.common.element_wise_squared_loss,
+                                                 train_step_counter=train_step_counter,
+                                                 observation_and_action_constraint_splitter=self.observation_and_action_constraint_splitter)
         elif agent_arg == 'DDQN':
             layer_params = (100,)
             self.fc_layer_params = layer_params
@@ -115,13 +143,13 @@ class DeepAgent():
                                                  train_step_counter=train_step_counter,
                                                  observation_and_action_constraint_splitter=self.observation_and_action_constraint_splitter)
         elif agent_arg == 'PPO':
-            actor_fc_layers=(200, 100)
-            value_fc_layers=(200, 100)
+            actor_fc_layers = (200, 100)
+            value_fc_layers = (200, 100)
             self.fc_layer_params = actor_fc_layers
-            use_rnns=False
-            lstm_size=(20,)
-            actor_net = self.create_actor_network(env,actor_fc_layers,True)
-            value_net = self.create_value_network(env,value_fc_layers,True)
+            use_rnns = False
+            lstm_size = (20,)
+            actor_net = self.create_actor_network(env, actor_fc_layers, True)
+            value_net = self.create_value_network(env, value_fc_layers, True)
             self.agent = obs_selector(agent_arg)(
                 env.time_step_spec,
                 env.act_spec,
@@ -133,7 +161,8 @@ class DeepAgent():
                 normalize_observations=False,
                 normalize_rewards=False,
                 use_gae=True,
-                train_step_counter=train_step_counter,observation_and_action_constraint_splitter=self.observation_and_action_constraint_splitter)
+                train_step_counter=train_step_counter,
+                observation_and_action_constraint_splitter=self.observation_and_action_constraint_splitter)
         elif agent_arg == 'DDPG':
             actor_fc_layers = (400, 300)
             critic_obs_fc_layers = (400,)
@@ -144,8 +173,9 @@ class DeepAgent():
             actor_learning_rate = 1e-4
             critic_learning_rate = 1e-3
             td_errors_loss_fn = tf.compat.v1.losses.huber_loss
-            actor_net = self.create_actor_network(env,actor_fc_layers,False)
-            critic_net = self.create_critic_network(env,critic_obs_fc_layers,critic_action_fc_layers,critic_joint_fc_layers)
+            actor_net = self.create_actor_network(env, actor_fc_layers, False)
+            critic_net = self.create_critic_network(env, critic_obs_fc_layers, critic_action_fc_layers,
+                                                    critic_joint_fc_layers)
             self.agent = obs_selector(agent_arg)(
                 env.time_step_spec,
                 env.act_spec,
@@ -165,10 +195,10 @@ class DeepAgent():
         elif agent_arg == 'REINFORCE':
             actor_fc_layers = (100,)
             value_net_fc_layers = (100,)
-            learning_rate=alpha
+            learning_rate = alpha
             value_estimation_loss_coef = 0.2
-            actor_net = self.create_actor_network(env,actor_fc_layers,True)
-            value_net = self.create_value_network(env,value_net_fc_layers,True)
+            actor_net = self.create_actor_network(env, actor_fc_layers, True)
+            value_net = self.create_value_network(env, value_net_fc_layers, True)
             self.agent = obs_selector(agent_arg)(
                 env.time_step_spec,
                 env.act_spec,
@@ -189,10 +219,11 @@ class DeepAgent():
             target_update_tau = 0.05
             actor_update_period = 2
             actor_learning_rate = alpha
-            critic_learning_rate = alpha*10
+            critic_learning_rate = alpha * 10
             target_update_period = 5
-            actor_net = self.create_actor_network(env,actor_fc_layers,False)
-            critic_net = self.create_critic_network(env,critic_obs_fc_layers,critic_action_fc_layers,critic_joint_fc_layers)
+            actor_net = self.create_actor_network(env, actor_fc_layers, False)
+            critic_net = self.create_critic_network(env, critic_obs_fc_layers, critic_action_fc_layers,
+                                                    critic_joint_fc_layers)
             self.agent = obs_selector(agent_arg)(
                 env.time_step_spec,
                 env.act_spec,
@@ -224,9 +255,19 @@ class DeepAgent():
             alpha_learning_rate = alpha
             td_errors_loss_fn = tf.math.squared_difference
             reward_scale_factor = 0.1
-            actor_net = ActorDistributionRnnNetwork(env.obs_spec['obs'],env.act_spec,input_fc_layer_params=actor_fc_layers,lstm_size=actor_lstm_size,output_fc_layer_params=actor_output_fc_layers,continuous_projection_net=tanh_normal_projection_network
-        .TanhNormalProjectionNetwork)
-            critic_net = critic_rnn_network.CriticRnnNetwork((env.obs_spec['obs'], env.act_spec),observation_fc_layer_params=critic_obs_fc_layers,action_fc_layer_params=critic_action_fc_layers,joint_fc_layer_params=critic_joint_fc_layers,lstm_size=critic_lstm_size,output_fc_layer_params=critic_output_fc_layers,kernel_initializer='glorot_uniform',last_kernel_initializer='glorot_uniform')
+            actor_net = ActorDistributionRnnNetwork(env.obs_spec['obs'], env.act_spec,
+                                                    input_fc_layer_params=actor_fc_layers, lstm_size=actor_lstm_size,
+                                                    output_fc_layer_params=actor_output_fc_layers,
+                                                    continuous_projection_net=tanh_normal_projection_network
+                                                    .TanhNormalProjectionNetwork)
+            critic_net = critic_rnn_network.CriticRnnNetwork((env.obs_spec['obs'], env.act_spec),
+                                                             observation_fc_layer_params=critic_obs_fc_layers,
+                                                             action_fc_layer_params=critic_action_fc_layers,
+                                                             joint_fc_layer_params=critic_joint_fc_layers,
+                                                             lstm_size=critic_lstm_size,
+                                                             output_fc_layer_params=critic_output_fc_layers,
+                                                             kernel_initializer='glorot_uniform',
+                                                             last_kernel_initializer='glorot_uniform')
             self.agent = obs_selector(agent_arg)(
                 env.time_step_spec,
                 env.act_spec,
@@ -244,79 +285,81 @@ class DeepAgent():
                 gamma=1.0,
                 reward_scale_factor=reward_scale_factor,
                 gradient_clipping=None,
-                train_step_counter=train_step_counter,observation_and_action_constraint_splitter=self.observation_and_action_constraint_splitter)
+                train_step_counter=train_step_counter,
+                observation_and_action_constraint_splitter=self.observation_and_action_constraint_splitter)
 
 
 class ActorNetwork(network.Network):
 
-  def __init__(self,
-               observation_spec,
-               action_spec,
-               preprocessing_layers=None,
-               preprocessing_combiner=None,
-               conv_layer_params=None,
-               fc_layer_params=(75, 40),
-               dropout_layer_params=None,
-               activation_fn=tf.keras.activations.relu,
-               enable_last_layer_zero_initializer=False,
-               name='ActorNetwork'):
-    super(ActorNetwork, self).__init__(
-        input_tensor_spec=observation_spec, state_spec=(), name=name)
+    def __init__(self,
+                 observation_spec,
+                 action_spec,
+                 preprocessing_layers=None,
+                 preprocessing_combiner=None,
+                 conv_layer_params=None,
+                 fc_layer_params=(75, 40),
+                 dropout_layer_params=None,
+                 activation_fn=tf.keras.activations.relu,
+                 enable_last_layer_zero_initializer=False,
+                 name='ActorNetwork'):
+        super(ActorNetwork, self).__init__(
+            input_tensor_spec=observation_spec, state_spec=(), name=name)
 
-    self._action_spec = action_spec
-    flat_action_spec = tf.nest.flatten(action_spec)
-    if len(flat_action_spec) > 1:
-      raise ValueError('Only a single action is supported by this network')
-    self._single_action_spec = flat_action_spec[0]
-    if self._single_action_spec.dtype not in [tf.int32, tf.int64]:
-      raise ValueError('Only int actions are supported by this network.')
+        self._action_spec = action_spec
+        flat_action_spec = tf.nest.flatten(action_spec)
+        if len(flat_action_spec) > 1:
+            raise ValueError('Only a single action is supported by this network')
+        self._single_action_spec = flat_action_spec[0]
+        if self._single_action_spec.dtype not in [tf.int32, tf.int64]:
+            raise ValueError('Only int actions are supported by this network.')
 
-    kernel_initializer = tf.keras.initializers.VarianceScaling(
-        scale=1. / 3., mode='fan_in', distribution='uniform')
-    self._encoder = encoding_network.EncodingNetwork(
-        observation_spec,
-        preprocessing_layers=preprocessing_layers,
-        preprocessing_combiner=preprocessing_combiner,
-        conv_layer_params=conv_layer_params,
-        fc_layer_params=fc_layer_params,
-        dropout_layer_params=dropout_layer_params,
-        activation_fn=activation_fn,
-        kernel_initializer=kernel_initializer,
-        batch_squash=False)
+        kernel_initializer = tf.keras.initializers.VarianceScaling(
+            scale=1. / 3., mode='fan_in', distribution='uniform')
+        self._encoder = encoding_network.EncodingNetwork(
+            observation_spec,
+            preprocessing_layers=preprocessing_layers,
+            preprocessing_combiner=preprocessing_combiner,
+            conv_layer_params=conv_layer_params,
+            fc_layer_params=fc_layer_params,
+            dropout_layer_params=dropout_layer_params,
+            activation_fn=activation_fn,
+            kernel_initializer=kernel_initializer,
+            batch_squash=False)
 
-    initializer = tf.keras.initializers.RandomUniform(
-        minval=-0.003, maxval=0.003)
+        initializer = tf.keras.initializers.RandomUniform(
+            minval=-0.003, maxval=0.003)
 
-    self._action_projection_layer = tf.keras.layers.Dense(
-        flat_action_spec[0].shape.num_elements(),
-        activation=tf.keras.activations.tanh,
-        kernel_initializer=initializer,
-        name='action')
+        self._action_projection_layer = tf.keras.layers.Dense(
+            flat_action_spec[0].shape.num_elements(),
+            activation=tf.keras.activations.tanh,
+            kernel_initializer=initializer,
+            name='action')
 
-  def call(self, observations, step_type=(), network_state=()):
-    outer_rank = nest_utils.get_outer_rank(observations, self.input_tensor_spec)
-    # We use batch_squash here in case the observations have a time sequence
-    # compoment.
-    batch_squash = utils.BatchSquash(outer_rank)
-    observations = tf.nest.map_structure(batch_squash.flatten, observations)
+    def call(self, observations, step_type=(), network_state=()):
+        outer_rank = nest_utils.get_outer_rank(observations, self.input_tensor_spec)
+        # We use batch_squash here in case the observations have a time sequence
+        # compoment.
+        batch_squash = utils.BatchSquash(outer_rank)
+        observations = tf.nest.map_structure(batch_squash.flatten, observations)
 
-    state, network_state = self._encoder(
-        observations, step_type=step_type, network_state=network_state)
-    actions = self._action_projection_layer(state)
-    actions = common.scale_to_spec(actions, self._single_action_spec)
-    actions = batch_squash.unflatten(actions)
-    return tf.nest.pack_sequence_as(self._action_spec, [actions]), network_state
+        state, network_state = self._encoder(
+            observations, step_type=step_type, network_state=network_state)
+        actions = self._action_projection_layer(state)
+        actions = common.scale_to_spec(actions, self._single_action_spec)
+        actions = batch_squash.unflatten(actions)
+        return tf.nest.pack_sequence_as(self._action_spec, [actions]), network_state
+
 
 class ReplayMemory:
     def __init__(self, config):
         self.config = config
-        self.actions = np.empty((self.config['mem_size']-1), dtype=np.int32)
-        self.rewards = np.empty((self.config['mem_size']-1), dtype=np.int32)
+        self.actions = np.empty((self.config['mem_size'] - 1), dtype=np.int32)
+        self.rewards = np.empty((self.config['mem_size'] - 1), dtype=np.int32)
         self.observations = np.empty((self.config['mem_size'], self.config['obs_dims']), dtype=np.int32)
         self.count = 0
         self.current = 0
 
-    def reset(self,obs):
+    def reset(self, obs):
         self.actions = np.empty((self.config['mem_size'] - 1), dtype=np.int32)
         self.rewards = np.empty((self.config['mem_size'] - 1), dtype=np.int32)
         self.observations = np.empty((self.config['mem_size'], self.config['obs_dims']), dtype=np.int32)
@@ -324,17 +367,17 @@ class ReplayMemory:
         self.current = 0
         self.initial_add(obs)
 
-    def initial_add(self,obs):
-        self.observations[-1,:] = obs
+    def initial_add(self, obs):
+        self.observations[-1, :] = obs
 
-    def add(self, action, reward,next_obs):
-        if self.config['mem_size']>1:
+    def add(self, action, reward, next_obs):
+        if self.config['mem_size'] > 1:
             self.count = max(self.count, self.current + 1)
             for i in range(self.count - 1):
                 self.actions[i] = self.actions[i]
                 self.rewards[i] = self.rewards[i]
                 self.observations[i] = self.observations[i + 1]
-            self.observations[-1,:] = next_obs
+            self.observations[-1, :] = next_obs
             self.actions[-1] = action
             self.rewards[-1] = reward
             self.current = (self.current + 1) % self.config['mem_size']
@@ -345,12 +388,12 @@ class ReplayMemory:
         return self.observations.reshape(-1)
 
     def getSeq(self):
-        seq_out = list(chain.from_iterable(zip(self.observations[:-1],self.actions)))
+        seq_out = list(chain.from_iterable(zip(self.observations[:-1], self.actions)))
         seq_out.append(self.observations[-1])
         return np.array(seq_out).reshape(-1)
 
     def getRewSeq(self):
-        seq_out = list(chain.from_iterable(zip(self.observations[:-1], self.actions,self.rewards)))
+        seq_out = list(chain.from_iterable(zip(self.observations[:-1], self.actions, self.rewards)))
         seq_out.append(self.observations[-1])
         return np.array(seq_out).reshape(-1)
     # def __call__(self,policy, obs, allowed_actions=None):
@@ -366,5 +409,3 @@ class ReplayMemory:
     #         action = tf.random.categorical(logits=act_logits, num_samples=1, dtype=None, seed=None,
     #                                            name=None).numpy()[0, 0]
     #     return tf_agents.trajectories.policy_step.PolicyStep(action=tf.constant([action]))
-
-
