@@ -1,4 +1,4 @@
-# source ~/storm_env/bin/activate
+source ~/storm_env/bin/activate
 declare -i MAX_STEPS=10000
 declare -i EVAL_EPISODES=100
 declare -i EVAL_INTERVAL=100

@@ -19,7 +19,7 @@ from noshield import NoShield
 from recorder import LoggingRecorder, VideoRecorder, StatsRecorder
 from model_simulator import Tracker
 from model_simulator import SimulationExecutor
-from rl_simulator import TF_Environment
+from rl_simulator import TF_Environment,simulate_deep_RL
 import matplotlib.pyplot as plt
 
 
@@ -205,12 +205,10 @@ def main():
     obs_type = args.obs_level
     valuations = False if obs_type == "BELIEF_SUPPORT" else True
     result_fname =  f"_{obs_type}"
-    # args.max_runs = 5000 if args.learning_method == "REINFORCE" else args.max_runs
-    # args.eval_interval = 100 if args.learning_method == "REINFORCE" else args.eval_interval
     executor = TF_Environment(model, tracker,obs_length=1,maxsteps=args.maxsteps,obs_type=obs_type,valuations=valuations)
     eval_executor = TF_Environment(model,tracker,obs_length=1,maxsteps=args.maxsteps,obs_type=obs_type,valuations=valuations)
     print("Starting RL:\n")
-    G0 = executor.simulate_deep_RL(recorder,total_nr_runs=args.max_runs, eval_interval=args.eval_interval,eval_episodes=args.eval_episodes, maxsteps=args.maxsteps,eval_env= eval_executor,agent_arg=args.learning_method,log_name=f"{output_path}/{videoname}{result_fname}.txt")
+    G0 = simulate_deep_RL(executor,recorder,total_nr_runs=args.max_runs, eval_interval=args.eval_interval,eval_episodes=args.eval_episodes, maxsteps=args.maxsteps,eval_env= eval_executor,agent_arg=args.learning_method)
     np.savetxt(f"{output_path}/{videoname}{result_fname}.csv",np.array(G0),delimiter=' ')
     # recorder.save(output_path, f"{videoname}{result_fname}")
 

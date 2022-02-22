@@ -17,10 +17,35 @@ from tf_agents.networks import encoding_network
 from tf_agents.networks import network
 from tf_agents.networks import utils
 from tf_agents.utils import nest_utils
+from tf_agents.keras_layers import dynamic_unroll_layer
 from reinforce import MaskedReinforceAgent
 from sac import DiscreteSacAgent,ActorDistributionRnnNetwork
 from ppo import PPOAgent
 
+
+KERAS_LSTM_FUSED = 2
+
+fused_lstm_cell = functools.partial(
+    tf.keras.layers.LSTMCell, implementation=KERAS_LSTM_FUSED)
+
+logits = functools.partial(
+    tf.keras.layers.Dense,
+    activation=None,
+    kernel_initializer=tf.random_uniform_initializer(minval=-0.03, maxval=0.03),
+    bias_initializer=tf.constant_initializer(-0.2))
+
+def create_recurrent_network(
+    input_fc_layer_units,
+    lstm_size,
+    output_fc_layer_units,
+    num_actions):
+  rnn_cell = tf.keras.layers.StackedRNNCells(
+      [fused_lstm_cell(s) for s in lstm_size])
+  return sequential.Sequential(
+      [dense_layer(num_units) for num_units in input_fc_layer_units]
+      + [dynamic_unroll_layer.DynamicUnroll(rnn_cell)]
+      + [dense_layer(num_units) for num_units in output_fc_layer_units]
+      + [logits(num_actions)])
 
 def dense_layer(num_units):
     return tf.keras.layers.Dense(num_units,activation=tf.keras.activations.relu,kernel_initializer=tf.keras.initializers.VarianceScaling(scale=2.0, mode='fan_in', distribution='truncated_normal'))
@@ -87,16 +112,16 @@ class DeepAgent():
                              td_errors_loss_fn=tf_agents.utils.common.element_wise_squared_loss,
                              train_step_counter=train_step_counter,
                              observation_and_action_constraint_splitter=self.observation_and_action_constraint_splitter)
-        elif agent_arg == 'DQN':
-            layer_params = (100,)
+        elif agent_arg == 'DRQN':
+            input_fc_layer_params = (50,)
             lstm_size = (20,)
-            self.fc_layer_params = layer_params
-            dense_layers = [dense_layer(num_units) for num_units in self.fc_layer_params]
-            q_values_layer = tf.keras.layers.Dense(env.nr_actions, activation=None,
-                                                   kernel_initializer=tf.keras.initializers.RandomUniform(minval=-0.03,
-                                                                                                          maxval=0.03),
-                                                   bias_initializer=tf.keras.initializers.Constant(-0.2))
-            q_net = tf_agents.networks.sequential.Sequential(dense_layers + [q_values_layer])
+            output_fc_layer_params = (20,)
+            # self.fc_layer_params = layer_params
+            q_net = create_recurrent_network(
+                input_fc_layer_params,
+                lstm_size,
+                output_fc_layer_params,
+                env.nr_actions)
             self.agent = obs_selector(agent_arg)(env.time_step_spec, env.act_spec, q_network=q_net, optimizer=optimizer,
                              td_errors_loss_fn=tf_agents.utils.common.element_wise_squared_loss,
                              train_step_counter=train_step_counter,

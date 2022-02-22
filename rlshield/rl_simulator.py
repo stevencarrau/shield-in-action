@@ -6,32 +6,45 @@ import stormpy.examples
 import stormpy.examples.files
 import stormpy.simulator
 import stormpy.pomdp
+from tf_agents.drivers import py_driver
+from tf_agents.metrics import py_metrics
 from tf_agents.trajectories import time_step as ts
 from tf_agents.typing import types
 from tf_agents.trajectories import trajectory
-from tf_agents.replay_buffers import tf_uniform_replay_buffer
+from tf_agents.replay_buffers import reverb_replay_buffer,reverb_utils
+from tf_agents.specs import tensor_spec
 import tensorflow as tf
 from tf_agents.utils import common
 import tf_agents
-from deep_policy import DeepAgent, ReplayMemory
+from deep_policy import DeepAgent
 import re
 import tf_agents
+import reverb
 
 from model_simulator import SimulationExecutor
 import logging
 logger = logging.getLogger(__name__)
 
-def collect_episode(env,policy,num_episodes,buffer):
-    episode_counter = 0
-    env.reset()
-    while episode_counter < num_episodes:
-        time_step = env.current_time_step()
-        action_step = policy.action(time_step)
-        next_time_step = env.step(env.apply_action(action_step.action))
-        traj = trajectory.from_transition(time_step,action_step,next_time_step)
-        buffer.add_batch(traj)
-        if next_time_step.step_type == ts.StepType.LAST:
-            episode_counter += 1
+def collect_episode(env,policy,num_episodes,buffer,max_steps):
+    driver = py_driver.PyDriver(
+        env,
+        tf_agents.policies.py_tf_eager_policy.PyTFEagerPolicy(
+            policy, use_tf_function=True),
+        [buffer],
+        max_episodes=num_episodes,max_steps=max_steps)
+    initial_time_step = env.reset()
+    driver.run(initial_time_step)
+    #
+    # episode_counter = 0
+    # env.reset()
+    # while episode_counter < num_episodes:
+    #     time_step = env.current_time_step()
+    #     action_step = policy.action(time_step)
+    #     next_time_step = env.step(env.apply_action(action_step.action))
+    #     traj = trajectory.from_transition(time_step,action_step,next_time_step)
+    #     buffer.add_batch(traj)
+    #     if next_time_step.step_type == ts.StepType.LAST:
+    #         episode_counter += 1
 
 
 def collect_step(env,agent,policy,buffer):
@@ -58,7 +71,7 @@ def compute_avg_return(env, agent,policy, num_episodes=10,max_steps=100):
             actions = env._simulator.available_actions()
             safe_actions = env._shield.shielded_actions(range(len(actions)))
             action_step = policy.action(time_step)
-            time_step = env.step(env.apply_action(action_step.action))
+            time_step = env.step(action_step.action)
             episode_return += time_step.reward[0]
             steps += 1
             if steps >= max_steps:
@@ -111,6 +124,7 @@ class TF_Environment(SimulationExecutor):
         self.obs_type = obs_type
         self.batch_size = 64
         self.goal_value = goal_value
+        self.batched = False
         action_keywords = set()
         for s_i in range(self._model.nr_states):
             n_act = self._model.get_nr_available_actions(s_i)
@@ -167,10 +181,10 @@ class TF_Environment(SimulationExecutor):
 
     def current_time_step(self,rew=None):
         if rew is not None:
-            r = tf.constant([rew])
+            r = tf.constant(rew)
         else:
-            r = tf.constant([self._simulator._report_rewards()[0]]) if len(self._simulator._report_rewards()) != 0 else tf.constant([0.])
-        discount = tf.constant([1.])
+            r = tf.constant(self._simulator._report_rewards()[0]) if len(self._simulator._report_rewards()) != 0 else tf.constant(0.)
+        discount = tf.constant(1.)
         actions = self._simulator.available_actions()
         if self.shield_on:
             safe_actions = self._shield.shielded_actions(range(len(actions)))
@@ -187,26 +201,31 @@ class TF_Environment(SimulationExecutor):
         mask = np.zeros(shape=(self.nr_actions,),dtype=bool)
         for i in mask_inds:
             mask[i] = True
-        mask = tf.logical_and(tf.ones(shape=(1,self.nr_actions),dtype=tf.bool),mask)
+        mask = tf.logical_and(tf.ones(shape=(self.nr_actions,),dtype=tf.bool),mask)
         # obs_in = []
         # for o_i in range(self.obs_length-1):
         #
         # print(self._simulator._report_state())
         # observation = {'obs':tf.constant([self.replay_memory.getObs()],dtype='int32'),'mask':mask}
-        observation = {'obs':tf.constant([self.observe()],dtype='int32'),'mask':mask}
+        observation = {'obs':tf.constant(self.observe(),dtype='int32'),'mask':mask}
         if self.first:
             self.first = False
-            return ts.TimeStep(reward=r, observation=observation, discount=discount,step_type=tf.constant([ts.StepType.FIRST]))
+            return ts.TimeStep(reward=r, observation=observation, discount=discount,step_type=tf.constant(ts.StepType.FIRST))
         elif self.is_done():
             self.restart()
             self.first=True
-            return ts.TimeStep(reward=r,observation=observation,discount=discount,step_type=tf.constant([ts.StepType.LAST]))
+            return ts.TimeStep(reward=r,observation=observation,discount=discount,step_type=tf.constant(ts.StepType.LAST))
         else:
-            return ts.TimeStep(reward=r, observation=observation,discount=discount, step_type=tf.constant([ts.StepType.MID]))
+            return ts.TimeStep(reward=r, observation=observation,discount=discount, step_type=tf.constant(ts.StepType.MID))
 
     def step(self,action):
-        state, rew, labels = self._simulator.step(action)
-        self._shield.track(action, self._simulator._report_observation())
+        try:
+            act = self.apply_action(action)
+        except:
+            act = 0
+            print('What')
+        state, rew, labels = self._simulator.step(act)
+        self._shield.track(act, self._simulator._report_observation())
         # obs = self.observe()
         self.step_count += 1
         if (self.is_done() and 'traps' in labels):
@@ -217,60 +236,6 @@ class TF_Environment(SimulationExecutor):
             rew[self.cost_ind] += 0
         current_step = self.current_time_step(rew=self.cost_fn(rew))
         return current_step
-
-    def simulate_deep_RL(self, recorder, total_nr_runs=5,eval_interval=1000,eval_episodes=10, maxsteps=30,eval_env=None,agent_arg='DQN',log_name=None):
-        logfile = open(log_name,"w")
-        self.maxsteps = maxsteps
-        gamma = 1.0
-        alpha = 3e-2
-        self.alpha = alpha
-        log_interval = 10
-        num_eval_episodes = eval_episodes
-        eval_interval = eval_interval
-        collect_steps_per_iteration = 1
-        RL_agent = DeepAgent(self,alpha,agent_arg)
-        buffer = tf_uniform_replay_buffer.TFUniformReplayBuffer(
-            data_spec=RL_agent.agent.collect_data_spec,
-            batch_size=1,
-            max_length=maxsteps)
-        avg_return = compute_avg_return(eval_env, RL_agent.agent,RL_agent.agent.policy,num_eval_episodes,max_steps=maxsteps)
-        # record_track(recorder, eval_env, RL_agent.agent, RL_agent.agent.policy, maxsteps)
-        self.reset()
-        collect_data(self, RL_agent.agent,RL_agent.agent.collect_policy, buffer,steps =2)
-        dataset = buffer.as_dataset(num_parallel_calls=1,sample_batch_size=64,num_steps=2).prefetch(3)
-        iterator = iter(dataset)
-        RL_agent.agent.train = common.function(RL_agent.agent.train)
-        returns = [(0,)+avg_return]
-        rand_pol = tf_agents.policies.random_tf_policy.RandomTFPolicy(self.time_step_spec,self.act_spec,observation_and_action_constraint_splitter=RL_agent.observation_and_action_constraint_splitter)
-        print(f'Random policy return: {compute_avg_return(eval_env,RL_agent.agent,rand_pol,10,max_steps=maxsteps)}')
-
-        for _ in range(total_nr_runs):
-            if agent_arg == 'REINFORCE':
-                collect_episode(self,RL_agent.agent.collect_policy,collect_steps_per_iteration,buffer)
-                experience = buffer.gather_all()
-                train_loss = RL_agent.agent.train(experience).loss
-                buffer.clear()
-            else:
-                collect_data(self,RL_agent.agent,  RL_agent.agent.collect_policy, buffer, collect_steps_per_iteration)
-                experience, unused_info = next(iterator)
-                train_loss = RL_agent.agent.train(experience).loss
-
-
-
-            step = int(RL_agent.agent.train_step_counter.numpy()/25) if agent_arg=='PPO' else RL_agent.agent.train_step_counter.numpy()
-            # step = self.episode_count
-
-            if step % log_interval == 0:
-                print('step = {0}: loss = {1}'.format(step, train_loss))
-
-            if step % eval_interval == 0:
-                avg_return = compute_avg_return(eval_env, RL_agent.agent, RL_agent.agent.policy, num_eval_episodes,max_steps=maxsteps)
-                print('step = {0}: Average Return = {1}'.format(step, avg_return))
-                returns.append((step,)+avg_return)
-
-        # record_track(recorder,eval_env,RL_agent.agent,RL_agent.agent.policy,maxsteps)
-        logfile.close()
-        return returns
 
     def observe(self):
         if self.valuations:
@@ -316,6 +281,108 @@ class TF_Environment(SimulationExecutor):
         act_keyword = self.act_keywords[int(act_in)]
         choice_list = self.get_choice_labels()
         return choice_list.index(act_keyword)
+
+
+def simulate_deep_RL(env, recorder, total_nr_runs=5,eval_interval=1000,eval_episodes=10, maxsteps=30,eval_env=None,agent_arg='DQN'):
+    gamma = 1.0
+    alpha = 3e-2
+    log_interval = 100
+    initial_collect_steps = 100
+    replay_buffer_max_length = 2000
+    num_eval_episodes = eval_episodes
+    eval_interval = eval_interval
+    train_sequence_length = 1
+    RL_agent = DeepAgent(env,alpha,agent_arg)
+    table_name = 'deep_rl_buffer'
+    replay_buffer_signature = tensor_spec.from_spec(RL_agent.agent.collect_data_spec)
+    # replay_buffer_signature = tensor_spec.add_outer_dim(replay_buffer_signature)
+    table = reverb.Table(
+        table_name,
+        max_size=replay_buffer_max_length,
+        sampler=reverb.selectors.Uniform(),
+        remover=reverb.selectors.Fifo(),
+        rate_limiter=reverb.rate_limiters.MinSize(1),
+        signature=replay_buffer_signature
+    )
+    reverb_server = reverb.Server([table])
+    buffer = reverb_replay_buffer.ReverbReplayBuffer(
+        RL_agent.agent.collect_data_spec,
+        table_name=table_name,
+        sequence_length=train_sequence_length+1,
+        local_server=reverb_server
+    )
+
+    if agent_arg == "REINFORCE":
+        rb_observer = reverb_utils.ReverbAddEpisodeObserver(
+            buffer.py_client,
+            table_name,
+            replay_buffer_max_length
+        )
+    else:
+        rb_observer = reverb_utils.ReverbAddTrajectoryObserver(
+            buffer.py_client, table_name, sequence_length=train_sequence_length+1
+        )
+    rand_pol = tf_agents.policies.random_tf_policy.RandomTFPolicy(env.time_step_spec, env.act_spec,
+                                                                  observation_and_action_constraint_splitter=RL_agent.observation_and_action_constraint_splitter)
+    metric = py_metrics.AverageReturnMetric()
+    py_driver.PyDriver(
+        env,
+        tf_agents.policies.py_tf_eager_policy.PyTFEagerPolicy(
+            rand_pol, use_tf_function=True),
+        [rb_observer,metric],
+        max_steps=initial_collect_steps).run(env.reset())
+
+    # avg_return = compute_avg_return(eval_env, RL_agent.agent,RL_agent.agent.policy,num_eval_episodes,max_steps=maxsteps)
+    # if recorder:
+    #     record_track(recorder, eval_env, RL_agent.agent, RL_agent.agent.policy, maxsteps)
+    time_step = env.reset()
+    # collect_data(env, RL_agent.agent,RL_agent.agent.collect_policy, buffer,steps =2)
+    dataset = buffer.as_dataset(num_parallel_calls=1,sample_batch_size=64,num_steps=train_sequence_length+1).prefetch(3)
+    iterator = iter(dataset)
+    collect_driver = py_driver.PyDriver(
+        env,
+        tf_agents.policies.py_tf_eager_policy.PyTFEagerPolicy(
+            RL_agent.agent.collect_policy, use_tf_function=True),
+        [rb_observer],
+        max_steps=train_sequence_length+1)
+    RL_agent.agent.train = common.function(RL_agent.agent.train)
+    returns = [(0,)+metric.result()]
+    # print(f'Random policy return: {compute_avg_return(eval_env,RL_agent.agent,rand_pol,10,max_steps=maxsteps)}')
+
+    for _ in range(total_nr_runs):
+        if agent_arg == 'REINFORCE':
+            # time_step,_ = collect_driver.run(time_step)
+            # experience, unused_info = next(iterator)
+            collect_episode(env,RL_agent.agent.collect_policy,num_episodes=1,buffer=rb_observer,max_steps=maxsteps)
+            iterator = iter(buffer.as_dataset(sample_batch_size=1))
+            trajectories, _ = next(iterator)
+            train_loss =  RL_agent.agent.train(experience=trajectories)
+            buffer.clear()
+        else:
+            time_step ,_ = collect_driver.run(time_step)
+            experience, unused_info = next(iterator)
+            train_loss = RL_agent.agent.train(experience).loss
+            # collect_data(env,RL_agent.agent,  RL_agent.agent.collect_policy, buffer, collect_steps_per_iteration)
+            # experience, unused_info = next(iterator)
+            # train_loss = RL_agent.agent.train(experience).loss
+
+
+
+        step = int(RL_agent.agent.train_step_counter.numpy()/25) if agent_arg=='PPO' else RL_agent.agent.train_step_counter.numpy()
+        # step = self.episode_count
+
+        if step % log_interval == 0:
+            print('step = {0}: loss = {1}'.format(step, train_loss))
+
+        if step % eval_interval == 0:
+            # avg_return = compute_avg_return(eval_env, RL_agent.agent, RL_agent.agent.policy, num_eval_episodes,max_steps=maxsteps)
+            print('step = {0}: Average Return = {1}'.format(step, metric.result()))
+            returns.append((step,)+metric.result())
+
+    if recorder:
+        record_track(recorder,eval_env,RL_agent.agent,RL_agent.agent.policy,maxsteps)
+    return returns
+
 
 def json_to_int(i):
     try:
