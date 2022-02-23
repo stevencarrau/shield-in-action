@@ -213,7 +213,7 @@ class TF_Environment(SimulationExecutor):
             return ts.TimeStep(reward=r, observation=observation, discount=discount,step_type=tf.constant(ts.StepType.FIRST))
         elif self.is_done():
             self.restart()
-            self.first=True
+            # self.first=True
             return ts.TimeStep(reward=r,observation=observation,discount=discount,step_type=tf.constant(ts.StepType.LAST))
         else:
             return ts.TimeStep(reward=r, observation=observation,discount=discount, step_type=tf.constant(ts.StepType.MID))
@@ -289,13 +289,12 @@ def simulate_deep_RL(env, recorder, total_nr_runs=5,eval_interval=1000,eval_epis
     log_interval = 100
     initial_collect_steps = 100
     replay_buffer_max_length = 2000
-    num_eval_episodes = eval_episodes
     eval_interval = eval_interval
     train_sequence_length = 1
     RL_agent = DeepAgent(env,alpha,agent_arg)
     table_name = 'deep_rl_buffer'
     replay_buffer_signature = tensor_spec.from_spec(RL_agent.agent.collect_data_spec)
-    # replay_buffer_signature = tensor_spec.add_outer_dim(replay_buffer_signature)
+    replay_buffer_signature = tensor_spec.add_outer_dim(replay_buffer_signature)
     table = reverb.Table(
         table_name,
         max_size=replay_buffer_max_length,
@@ -305,23 +304,43 @@ def simulate_deep_RL(env, recorder, total_nr_runs=5,eval_interval=1000,eval_epis
         signature=replay_buffer_signature
     )
     reverb_server = reverb.Server([table])
-    buffer = reverb_replay_buffer.ReverbReplayBuffer(
-        RL_agent.agent.collect_data_spec,
-        table_name=table_name,
-        sequence_length=train_sequence_length+1,
-        local_server=reverb_server
-    )
-
     if agent_arg == "REINFORCE":
+        buffer = reverb_replay_buffer.ReverbReplayBuffer(
+            RL_agent.agent.collect_data_spec,
+            table_name=table_name,
+            sequence_length=None,
+            local_server=reverb_server
+        )
         rb_observer = reverb_utils.ReverbAddEpisodeObserver(
             buffer.py_client,
             table_name,
             replay_buffer_max_length
         )
+        collect_driver = py_driver.PyDriver(
+            env,
+            tf_agents.policies.py_tf_eager_policy.PyTFEagerPolicy(
+                RL_agent.agent.collect_policy, use_tf_function=True),
+            [rb_observer],
+            max_steps=maxsteps,max_episodes=1)
     else:
+        buffer = reverb_replay_buffer.ReverbReplayBuffer(
+            RL_agent.agent.collect_data_spec,
+            table_name=table_name,
+            sequence_length=train_sequence_length + 1,
+            local_server=reverb_server
+        )
         rb_observer = reverb_utils.ReverbAddTrajectoryObserver(
             buffer.py_client, table_name, sequence_length=train_sequence_length+1
         )
+        collect_driver = py_driver.PyDriver(
+            env,
+            tf_agents.policies.py_tf_eager_policy.PyTFEagerPolicy(
+                RL_agent.agent.collect_policy, use_tf_function=True),
+            [rb_observer],
+            max_steps=train_sequence_length+1, max_episodes=1)
+        dataset = buffer.as_dataset(num_parallel_calls=1, sample_batch_size=64,
+                                    num_steps=train_sequence_length + 1).prefetch(3)
+        iterator = iter(dataset)
     rand_pol = tf_agents.policies.random_tf_policy.RandomTFPolicy(env.time_step_spec, env.act_spec,
                                                                   observation_and_action_constraint_splitter=RL_agent.observation_and_action_constraint_splitter)
     metric = py_metrics.AverageReturnMetric()
@@ -337,14 +356,6 @@ def simulate_deep_RL(env, recorder, total_nr_runs=5,eval_interval=1000,eval_epis
     #     record_track(recorder, eval_env, RL_agent.agent, RL_agent.agent.policy, maxsteps)
     time_step = env.reset()
     # collect_data(env, RL_agent.agent,RL_agent.agent.collect_policy, buffer,steps =2)
-    dataset = buffer.as_dataset(num_parallel_calls=1,sample_batch_size=64,num_steps=train_sequence_length+1).prefetch(3)
-    iterator = iter(dataset)
-    collect_driver = py_driver.PyDriver(
-        env,
-        tf_agents.policies.py_tf_eager_policy.PyTFEagerPolicy(
-            RL_agent.agent.collect_policy, use_tf_function=True),
-        [rb_observer],
-        max_steps=train_sequence_length+1)
     RL_agent.agent.train = common.function(RL_agent.agent.train)
     returns = [(0,)+metric.result()]
     # print(f'Random policy return: {compute_avg_return(eval_env,RL_agent.agent,rand_pol,10,max_steps=maxsteps)}')
