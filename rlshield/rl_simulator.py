@@ -6,6 +6,7 @@ import stormpy.examples
 import stormpy.examples.files
 import stormpy.simulator
 import stormpy.pomdp
+from tf_agents.specs import tensor_spec
 from tf_agents.trajectories import time_step as ts
 from tf_agents.typing import types
 from tf_agents.trajectories import trajectory
@@ -34,30 +35,34 @@ def collect_episode(env,policy,num_episodes,buffer):
             episode_counter += 1
 
 
-def collect_step(env,agent,policy,buffer):
+def collect_step(env,agent,policy,buffer,policy_state):
     time_step = env.current_time_step()
     actions = env._simulator.available_actions()
     safe_actions = env._shield.shielded_actions(range(len(actions)))
-    action_step = policy.action(time_step)
+    action_step = policy.action(time_step,policy_state)
     next_time_step = env.step(env.apply_action(action_step.action))
     traj = trajectory.from_transition(time_step,action_step,next_time_step)
     buffer.add_batch(traj)
+    return action_step.state
 
-def collect_data(env,agent,policy,buffer,steps):
+def collect_data(env,agent,policy,buffer,steps,policy_state):
     for i in range(steps):
-        collect_step(env,agent,policy,buffer)
+        policy_state = collect_step(env,agent,policy,buffer,policy_state)
+    return policy_state
 
 def compute_avg_return(env, agent,policy, num_episodes=10,max_steps=100):
     total_return = 0.0
     episodes = []
     for _ in range(num_episodes):
         time_step = env.reset()
+        policy_state = policy.get_initial_state(1)
         episode_return = 0.0
         steps = 0
         while not time_step.is_last():
             actions = env._simulator.available_actions()
             safe_actions = env._shield.shielded_actions(range(len(actions)))
-            action_step = policy.action(time_step)
+            action_step = policy.action(time_step=time_step,policy_state=policy_state)
+            policy_state = action_step.state
             time_step = env.step(env.apply_action(action_step.action))
             episode_return += time_step.reward[0]
             steps += 1
@@ -247,7 +252,8 @@ class TF_Environment(SimulationExecutor):
         avg_return = compute_avg_return(eval_env, RL_agent.agent,RL_agent.agent.policy,num_eval_episodes,max_steps=maxsteps)
         # record_track(recorder, eval_env, RL_agent.agent, RL_agent.agent.policy, maxsteps)
         self.reset()
-        collect_data(self, RL_agent.agent,RL_agent.agent.collect_policy, buffer,steps =2)
+        policy_state = RL_agent.agent.collect_policy.get_initial_state(1)
+        policy_state = collect_data(self, RL_agent.agent,RL_agent.agent.collect_policy, buffer,steps =2,policy_state=policy_state)
         dataset = buffer.as_dataset(num_parallel_calls=1,sample_batch_size=64,num_steps=2).prefetch(3)
         iterator = iter(dataset)
         RL_agent.agent.train = common.function(RL_agent.agent.train)
@@ -262,7 +268,7 @@ class TF_Environment(SimulationExecutor):
                 train_loss = RL_agent.agent.train(experience).loss
                 buffer.clear()
             else:
-                collect_data(self,RL_agent.agent,  RL_agent.agent.collect_policy, buffer, collect_steps_per_iteration)
+                policy_state = collect_data(self,RL_agent.agent,  RL_agent.agent.collect_policy, buffer, collect_steps_per_iteration,policy_state)
                 experience, unused_info = next(iterator)
                 train_loss = RL_agent.agent.train(experience).loss
 

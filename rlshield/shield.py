@@ -217,3 +217,25 @@ def main():
 
 if __name__ == "__main__":
     main()
+
+def grab_model(grid_model,constants):
+    model = experiment_to_grid_model_names[grid_model]
+    model_constants = list(inspect.signature(model).parameters.keys())
+    if constants is None and len(model_constants) > 0:
+        raise RuntimeError(
+            "Model constants {} defined, but not given by command line".format(",".join(model_constants)))
+    constants = dict(item.split('=') for item in constants.split(","))
+    input = model(**constants)
+    initial = False
+    prism_program = sp.parse_prism_program(input.path)
+    prop = sp.parse_properties_for_prism_program(input.properties[0], prism_program)[0]
+    prism_program, props = stormpy.preprocess_symbolic_input(prism_program, [prop], input.constants)
+    prop = props[0]
+    prism_program = prism_program.as_prism_program()
+    raw_formula = prop.raw_formula
+    model = build_pomdp(prism_program, raw_formula)
+    model = sp.pomdp.make_canonic(model)
+    winning_region = compute_winning_region(model, raw_formula, initial)
+    otf_shield = construct_otf_shield(model, winning_region)
+    tracker = Tracker(model, otf_shield)
+    return TF_Environment(model, tracker,obs_length=1,maxsteps=100,obs_type='OBS_LEVEL',valuations=True)
