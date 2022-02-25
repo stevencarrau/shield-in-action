@@ -94,7 +94,7 @@ def main():
     parser.add_argument('--valuations',default=False)
     parser.add_argument('--learning_method',default='PPO')
     parser.add_argument('--eval-interval', type=int,default=100)
-    parser.add_argument('--eval-episodes', type=int,default=5)
+    parser.add_argument('--eval-episodes', type=int,default=100)
     parser.add_argument('--goal-value',type=int,default=10)
 
     args = parser.parse_args()
@@ -207,10 +207,10 @@ def main():
     result_fname =  f"_{obs_type}"
     # args.max_runs = 5000 if args.learning_method == "REINFORCE" else args.max_runs
     # args.eval_interval = 100 if args.learning_method == "REINFORCE" else args.eval_interval
-    executor = TF_Environment(model, tracker,obs_length=1,maxsteps=args.maxsteps,obs_type=obs_type,valuations=valuations)
-    eval_executor = TF_Environment(model,tracker,obs_length=1,maxsteps=args.maxsteps,obs_type=obs_type,valuations=valuations)
+    executor = TF_Environment(model, tracker,obs_length=1,maxsteps=args.maxsteps,obs_type=obs_type,valuations=valuations,goal_value=args.goal_value)
+    eval_executor = TF_Environment(model,tracker,obs_length=1,maxsteps=args.maxsteps,obs_type=obs_type,valuations=valuations,goal_value=args.goal_value)
     print("Starting RL:\n")
-    G0 = executor.simulate_deep_RL(recorder,total_nr_runs=args.max_runs, eval_interval=args.eval_interval,eval_episodes=args.eval_episodes, maxsteps=args.maxsteps,eval_env= eval_executor,agent_arg=args.learning_method,log_name=f"{output_path}/{videoname}{result_fname}.txt")
+    G0 = executor.simulate_deep_RL(recorder,total_nr_runs=args.max_runs, eval_interval=args.eval_interval,eval_episodes=args.eval_episodes, maxsteps=args.maxsteps,eval_env= eval_executor,agent_arg=args.learning_method)
     np.savetxt(f"{output_path}/{videoname}{result_fname}.csv",np.array(G0),delimiter=' ')
     # recorder.save(output_path, f"{videoname}{result_fname}")
 

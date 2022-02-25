@@ -66,8 +66,9 @@ def compute_avg_return(env, agent,policy, num_episodes=10,max_steps=100):
         total_return += episode_return
         episodes.append(episode_return.numpy())
     episode_rewards = np.array(episodes)
-    avg_return = total_return / num_episodes  
-    return avg_return.numpy(),np.quantile(episode_rewards,0.1),np.quantile(episode_rewards,0.3173),np.quantile(episode_rewards,0.6827),np.quantile(episode_rewards,0.9)
+    avg_return = total_return / num_episodes
+    min_value = 0 if env.goal_value==10 else -1000
+    return avg_return.numpy(),np.quantile(episode_rewards,0.3173),np.quantile(episode_rewards,0.6827),np.clip(avg_return.numpy()-np.std(episode_rewards),min_value,env.goal_value),np.clip(avg_return.numpy()+np.std(episode_rewards),min_value,env.goal_value)
 
 def record_track(recorder,executor,agent,policy,maxsteps):
     state = executor._simulator.restart()
@@ -210,7 +211,7 @@ class TF_Environment(SimulationExecutor):
         # obs = self.observe()
         self.step_count += 1
         if (self.is_done() and 'traps' in labels):
-            rew[self.cost_ind] += self.goal_value if self.goal_value > 100 else 0
+            rew[self.cost_ind] += self.goal_value if self.goal_value > 10 else 0
         elif (self.is_done() and 'goal' in labels):
             rew[self.gain_ind] += self.goal_value
         elif (self.is_done()):
@@ -219,7 +220,6 @@ class TF_Environment(SimulationExecutor):
         return current_step
 
     def simulate_deep_RL(self, recorder, total_nr_runs=5,eval_interval=1000,eval_episodes=10, maxsteps=30,eval_env=None,agent_arg='DQN',log_name=None):
-        logfile = open(log_name,"w")
         self.maxsteps = maxsteps
         gamma = 1.0
         alpha = 3e-2
@@ -269,7 +269,6 @@ class TF_Environment(SimulationExecutor):
                 returns.append((step,)+avg_return)
 
         # record_track(recorder,eval_env,RL_agent.agent,RL_agent.agent.policy,maxsteps)
-        logfile.close()
         return returns
 
     def observe(self):
