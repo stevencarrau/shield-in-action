@@ -1,76 +1,77 @@
 import gym
 from gym import error, spaces
-
+import stormpy
+import numpy as np
 
 class ShieldToGymWrapper(gym.Env):
     def __init__(self,
                  model,
-                 shield
+                 shield,
+                 cfg
     ):
-        super().__init__(model, shield)
-        self.nr_actions = max(action_spec_count)self.step_count = 0
+        self._model = model
+        self._simulator = stormpy.simulator.create_simulator(model, seed=42)
+        self._simulator.set_full_observability(True) # We want to access the full state space for visualisations.
+        self._shield = shield
+        action_spec_count = [self._model.get_nr_available_actions(i) for i in range(1, self._model.nr_states)]
+        self.nr_actions = max(action_spec_count)
+        self.action_space = spaces.Discrete(self.nr_actions)
+        self.step_count = 0
         self.episode_count = 0
         self.cost_ind = list(self._model.reward_models.keys()).index('costs')
         self.gain_ind = list(self._model.reward_models.keys()).index('gains')
         self.first = True
-        self.maxsteps = maxsteps
+        self.maxsteps = cfg['maxsteps']
+        self.goal_value = cfg['goal_value']
+        self.obs_type = cfg['obs_type']
+        self.valuations = True
+        if self.valuations:
+            self.keywords = list(self.get_observation_keywords())
+            self.keywords.remove('start')
+            low = np.zeros((len(self.keywords),),dtype=int)
+            high = np.zeros((len(self.keywords),),dtype=int)
+            for s in range(self._model.nr_states):
+                obs = self.get_observation_from_type(s,self.obs_type)
+                obs_val = self.get_valuation(obs)
+                low = np.minimum(low,obs_val)
+                high = np.maximum(high,obs_val)
+            self.observation_space = spaces.Box(
+                low=low,
+                high=high,
+                dtype=int)
+        elif self.obs_type == 'BELIEF_SUPPORT':
+            self.observation_space = spaces.Box(
+                low=np.zeros((self._model.nr_states,),dtype=int),
+                high=np.zeros((self._model.nr_states,),dtype=int),
+                dtype=int
+            )
+
 
     def restart(self):
-        self._simulator.restart()
+        state, rew, labels = self._simulator.restart()
         self._shield.reset()
         self.step_count = 0
         self.sink_flag = False
         self.episode_count += 1
+        return self.observe()
 
     def reset(self):
-        self.restart()
-        # self._simulator.step(0)
-        # self._shield.track(0,self._simulator._report_observation())
-        return self.current_time_step()
+        return self.restart()
 
     def is_done(self):
-        # if self._model.is_sink_state(self._simulator._engine.get_current_state()) and not self.sink_flag:
-        #     self.sink_flag = True
-        #     return False
         return self._model.is_sink_state(self._simulator._engine.get_current_state()) or self.step_count==self.maxsteps
 
-    def current_time_step(self,rew=None):
-        if rew is not None:
-            r = tf.constant([rew])
-        else:
-            r = tf.constant([self._simulator._report_rewards()[0]]) if len(self._simulator._report_rewards()) != 0 else tf.constant([0.])
-        discount = tf.constant([1.])
-        actions = self._simulator.available_actions()
-        safe_actions = self._shield.shielded_actions(range(len(actions)))
-        mask = np.zeros(shape=(self.nr_actions,),dtype=bool)
-        for i in safe_actions:
-            mask[i] = True
-        mask = tf.logical_and(tf.ones(shape=(1,self.nr_actions),dtype=tf.bool),mask)
-        observation = {'obs':tf.constant([self.observe()],dtype='int32'),'mask':mask}
-        if self.first:
-            self.first = False
-            return ts.TimeStep(reward=r, observation=observation, discount=discount,step_type=tf.constant([ts.StepType.FIRST]))
-        elif self.is_done():
-            self.restart()
-            self.first=True
-            return ts.TimeStep(reward=r,observation=observation,discount=discount,step_type=tf.constant([ts.StepType.LAST]))
-        else:
-            return ts.TimeStep(reward=r, observation=observation,discount=discount, step_type=tf.constant([ts.StepType.MID]))
-
     def step(self,action):
-        state, rew = self._simulator.step(action)
+        state, rew, labels = self._simulator.step(int(action))
         self._shield.track(action, self._simulator._report_observation())
-        # obs = self.observe()
         self.step_count += 1
-        if (self.is_done() and 'traps' in self._model.states[state].labels):
-            rew[self.cost_ind] += 1000
-        elif (self.is_done() and 'goal' in self._model.states[state].labels):
-            rew[self.gain_ind] += 1000
+        if (self.is_done() and 'traps' in labels):
+            rew[self.cost_ind] += self.goal_value if self.goal_value > 100 else 0
+        elif (self.is_done() and 'goal' in labels):
+            rew[self.gain_ind] += self.goal_value
         elif (self.is_done()):
-            rew[self.cost_ind] += 100
-        current_step = self.current_time_step(rew=self.cost_fn(rew))
-        # self.replay_memory.add(action,self.cost_fn(rew),obs)
-        return current_step
+            rew[self.cost_ind] += 0
+        return self.observe(), self.cost_fn(rew), self.is_done(), labels
 
     def observe(self):
         if self.valuations:
@@ -105,8 +106,24 @@ class ShieldToGymWrapper(gym.Env):
             keywords = set([i[1:-2] for i in str(self._model.observation_valuations.get_json(0)).split()[1:-1:2]])
         return keywords
 
+    def get_valuation(self,val_in):
+        if self.obs_type == 'STATE_LEVEL':
+            return [json_to_int(self._model.state_valuations.get_json(val_in)[i]) for i in
+             self.keywords]
+        else:
+            return [json_to_int(self._model.observation_valuations.get_json(val_in)[i])
+                    for i in self.keywords]
+
+    def get_observation_from_type(self,s,obs_type):
+        if obs_type == 'STATE_LEVEL':
+            return s
+        else:
+            return self._model.get_observation(s)
+
+
 def json_to_int(i):
     try:
         return int(i)
     except:
         return 0 if i=='false' else 1
+

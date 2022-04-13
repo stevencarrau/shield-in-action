@@ -6,16 +6,6 @@ import stormpy.examples
 import stormpy.examples.files
 import stormpy.simulator
 import stormpy.pomdp
-# from reinforce import REINFORCE
-# from DQN import DQN
-from tf_agents.trajectories import time_step as ts
-from tf_agents.typing import types
-from tf_agents.trajectories import trajectory
-from tf_agents.replay_buffers import tf_uniform_replay_buffer
-import tensorflow as tf
-from tf_agents.utils import common
-import tf_agents
-from deep_policy import DeepAgent, ReplayMemory
 
 
 
