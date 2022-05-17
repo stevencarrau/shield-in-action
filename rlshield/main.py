@@ -7,7 +7,6 @@ with open('cfgs/'+filename+'.json') as f:
 for c_i in load_file:
    for cfg in load_file[c_i]:
       shield.main(cfg)
-   # cfg = load_file[filename][0]
 
 for policy in ["qmdp", "mdp"]:
    cfg["policy"] = policy
