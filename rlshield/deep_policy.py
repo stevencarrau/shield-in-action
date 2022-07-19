@@ -43,9 +43,9 @@ def obs_selector(args='DQN'):
 
 class DeepAgent():
 
-    def __init__(self,env,alpha,agent_arg='PPO'):
+    def __init__(self,env,alpha,agent_arg='PPO',layer_size=None):
         self.alpha = alpha
-        self.learning_method(env,alpha,agent_arg)
+        self.learning_method(env,alpha,agent_arg,layer_size)
 
     def observation_and_action_constraint_splitter(self,observation):
         return observation['obs'], observation['mask']
@@ -69,11 +69,14 @@ class DeepAgent():
     #     critic_net = DiscreteSacCriticNetwork((env.obs_spec['obs'],env.act_spec),observation_fc_layer_params=obs_fc_layer_units,action_fc_layer_params=action_fc_layer_units,joint_fc_layer_params=joint_fc_layer_units)
     #     return critic_net # MaskSplitterNetwork(self.observation_and_action_constraint_splitter,critic_net,passthrough_mask=True)
 
-    def learning_method(self,env,alpha,agent_arg):
+    def learning_method(self,env,alpha,agent_arg,layer_size=None):
         train_step_counter = tf.Variable(0)
         optimizer = tf.keras.optimizers.Adam(learning_rate=alpha)
         if agent_arg == 'DQN':
-            layer_params = (100,)
+            if layer_size:
+                layer_params = (layer_size,)
+            else:
+                layer_params = (100,)
             self.fc_layer_params = layer_params
             dense_layers = [dense_layer(num_units) for num_units in self.fc_layer_params]
             q_values_layer = tf.keras.layers.Dense(env.nr_actions, activation=None,
@@ -86,7 +89,10 @@ class DeepAgent():
                              train_step_counter=train_step_counter,
                              observation_and_action_constraint_splitter=self.observation_and_action_constraint_splitter)
         elif agent_arg == 'DDQN':
-            layer_params = (100,)
+            if layer_size:
+                layer_params = (layer_size,)
+            else:
+                layer_params = (100,)
             self.fc_layer_params = layer_params
             dense_layers = [dense_layer(num_units) for num_units in self.fc_layer_params]
             q_values_layer = tf.keras.layers.Dense(env.nr_actions, activation=None,
@@ -99,8 +105,12 @@ class DeepAgent():
                                                  train_step_counter=train_step_counter,
                                                  observation_and_action_constraint_splitter=self.observation_and_action_constraint_splitter)
         elif agent_arg == 'PPO':
-            actor_fc_layers=(200, 100)
-            value_fc_layers=(200, 100)
+            if layer_size:
+                actor_fc_layers=(layer_size, 100)
+                value_fc_layers=(layer_size, 100)
+            else:
+                actor_fc_layers=(200, 100)
+                value_fc_layers=(200, 100)
             self.fc_layer_params = actor_fc_layers
             use_rnns=False
             lstm_size=(20,)
@@ -147,8 +157,12 @@ class DeepAgent():
                 td_errors_loss_fn=td_errors_loss_fn,
                 train_step_counter=train_step_counter)
         elif agent_arg == 'REINFORCE':
-            actor_fc_layers = (100,)
-            value_net_fc_layers = (100,)
+            if layer_size:
+                actor_fc_layers = (layer_size,)
+                value_net_fc_layers = (layer_size,)
+            else:
+                actor_fc_layers = (100,)
+                value_net_fc_layers = (100,)
             learning_rate=alpha
             value_estimation_loss_coef = 0.2
             actor_net = self.create_actor_network(env,actor_fc_layers,True)

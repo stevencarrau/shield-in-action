@@ -45,7 +45,7 @@
 "valuations" : true,
 "noshield": true,
 "fixed_policy": true,
-"prob" : 0.25
+"prob" : 0.75
 },
   {
 "grid_model": "obstacle",

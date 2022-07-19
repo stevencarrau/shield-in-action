@@ -1,7 +1,7 @@
 import json
 import shield
 
-filename = 'policy_compare'
+filename = 'learning_rate'
 with open('cfgs/'+filename+'.json') as f:
    load_file = json.load(f)
 for c_i in load_file:

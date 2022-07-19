@@ -364,18 +364,26 @@ def main(cfg=None):
         recorder = LoggingRecorder(only_keep_finishers=args.finishers_only)
 
     no_shield_tracker = Tracker(model,NoShield())
-    prob = args.prob
+    hyper_param = {}
+    if hasattr(args,'network_size'):
+        hyper_param.update({'network_size':args.__getattribute__('network_size')})
+    if hasattr(args,'alpha'):
+        hyper_param.update({'alpha':args.__getattribute__('alpha')})
     # Collect nomial fixed policies
     obs_type = args.obs_level
     valuations = args.valuations
-    result_fname = f"_Fixed_Policy_{prob}_{obs_type}_valuations" if valuations else f"_{obs_type}"
+    if hasattr(args,'fname'):
+        result_fname = f""+args.fname
+    else:
+        result_fname = f"_Hyper_Param_Size_{args.network_size}_{obs_type}_valuations" if valuations else f"_{obs_type}"
     executor_shielded = TF_Environment(model, tracker,obs_length=1,maxsteps=args.maxsteps,obs_type=obs_type,valuations=valuations,goal_value=args.goal_value)
     executor_unshielded = TF_Environment(model, no_shield_tracker,obs_length=1,maxsteps=args.maxsteps,obs_type=obs_type,valuations=valuations,goal_value=args.goal_value)
     eval_executor_shielded = TF_Environment(model,tracker,obs_length=1,maxsteps=args.maxsteps,obs_type=obs_type,valuations=valuations,goal_value=args.goal_value)
     eval_executor_unshielded = TF_Environment(model, tracker, obs_length=1, maxsteps=args.maxsteps, obs_type=obs_type, valuations=valuations,goal_value=args.goal_value)
-    experience_buffer = executor_shielded.collect_buffer(args.max_runs,10)
+    # experience_buffer = executor_shielded.collect_buffer(args.max_runs,10)
     print("Starting RL:\n")
-    G0 = executor_unshielded.simulate_deep_RL_fixed_policy(recorder,total_nr_runs=args.max_runs, eval_interval=args.eval_interval,eval_episodes=args.eval_episodes,eval_env= eval_executor_unshielded,agent_arg=args.learning_method,experience_set=experience_buffer,prob=prob)
+    G0 = eval_executor_shielded.simulate_deep_RL(recorder,total_nr_runs=args.max_runs, eval_interval=args.eval_interval,eval_episodes=args.eval_episodes,eval_env= eval_executor_unshielded,agent_arg=args.learning_method,hyper_param=hyper_param)
+    # G0 = executor_unshielded.simulate_deep_RL_fixed_policy(recorder,total_nr_runs=args.max_runs, eval_interval=args.eval_interval,eval_episodes=args.eval_episodes,eval_env= eval_executor_unshielded,agent_arg=args.learning_method,experience_set=experience_buffer,prob=prob)
     np.savetxt(f"{output_path}/{videoname}{result_fname}.csv",np.array(G0),delimiter=' ')
     recorder.save(output_path, f"{videoname}{result_fname}")
 

@@ -287,7 +287,7 @@ class TF_Environment(SimulationExecutor):
         current_step = self.current_time_step(rew=self.cost_fn(rew))
         return current_step
 
-    def simulate_deep_RL(self, recorder, total_nr_runs=5,eval_interval=1000,eval_episodes=10,eval_env=None,agent_arg='DQN',log_name=None):
+    def simulate_deep_RL(self, recorder, total_nr_runs=5,eval_interval=1000,eval_episodes=10,eval_env=None,agent_arg='DQN',hyper_param=None):
         gamma = 1.0
         alpha = 3e-2
         self.alpha = alpha
@@ -295,7 +295,17 @@ class TF_Environment(SimulationExecutor):
         num_eval_episodes = eval_episodes
         eval_interval = eval_interval
         collect_steps_per_iteration = 1
-        RL_agent = DeepAgent(self,alpha,agent_arg)
+        if hyper_param:
+            if 'network_size' in hyper_param:
+                RL_agent = DeepAgent(self, alpha, agent_arg,layer_size=hyper_param['network_size'])
+            else:
+                if 'alpha' in hyper_param:
+                    alpha = hyper_param['alpha']
+                    self.alpha = alpha
+
+                RL_agent = DeepAgent(self,alpha, agent_arg)
+        else:
+            RL_agent = DeepAgent(self,alpha,agent_arg)
         buffer = tf_uniform_replay_buffer.TFUniformReplayBuffer(
             data_spec=RL_agent.agent.collect_data_spec,
             batch_size=1,
@@ -331,7 +341,7 @@ class TF_Environment(SimulationExecutor):
                 print('step = {0}: loss = {1}'.format(step, train_loss))
 
             if step % eval_interval == 0:
-                avg_return = compute_avg_return(eval_env, RL_agent.agent, RL_agent.agent.policy, num_eval_episodes,max_steps=maxsteps)
+                avg_return = compute_avg_return(eval_env, RL_agent.agent, RL_agent.agent.policy, num_eval_episodes,max_steps=self.maxsteps)
                 print('step = {0}: Average Return = {1}'.format(step, avg_return))
                 returns.append((step,)+avg_return)
 
