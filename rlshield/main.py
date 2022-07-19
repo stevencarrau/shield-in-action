@@ -1,7 +1,7 @@
 import json
 import shield
 
-filename = 'learning_rate'
+filename = 'REINFORCE_FULL_OBS'
 with open('cfgs/'+filename+'.json') as f:
    load_file = json.load(f)
 for c_i in load_file:

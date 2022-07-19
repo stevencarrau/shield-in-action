@@ -132,6 +132,17 @@ def record_path(cfg=None):
     random.seed(args.seed)
     if args.grid_model:
         logger.info("Look up problem definition....")
+        if hasattr(args,'full_obs'):
+            if args.full_obs:
+                import gridfull.models as full_models
+                experiment_to_grid_model_names = {
+                    "avoid": full_models.surveillance,
+                    "refuel": full_models.refuel,
+                    'obstacle': full_models.obstacle,
+                    "intercept": full_models.intercept,
+                    'evade': full_models.evade,
+                    'rocks': full_models.rocks
+                }
         model = experiment_to_grid_model_names[args.grid_model]
         model_constants = list(inspect.signature(model).parameters.keys())
         if args.constants is None and len(model_constants) > 0:
