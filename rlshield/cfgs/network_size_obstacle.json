@@ -1,5 +1,6 @@
-{"refuel_reinforce":[
+{"obstacle_reinforce":[
   {
+    "fname" : "_Net_1",
 "grid_model": "obstacle",
 "learning_method": "REINFORCE",
 "max_runs": 2000,
@@ -7,7 +8,7 @@
 "constants": "N=6",
 "video_path": "newvideos/HYPER",
 "obs_level": "BELIEF_SUPPORT",
-"eval_interval": 2000,
+"eval_interval": 200,
 "eval_episodes": 100,
 "goal_value": 1000,
 "valuations" : true,
@@ -17,6 +18,7 @@
 "network_size": 1
 },
 {
+  "fname" : "_Net_1",
 "grid_model": "obstacle",
 "learning_method": "REINFORCE",
 "max_runs": 2000,
@@ -24,7 +26,7 @@
 "constants": "N=6",
 "video_path": "newvideos/HYPER",
 "obs_level": "BELIEF_SUPPORT",
-"eval_interval": 2000,
+"eval_interval": 200,
 "eval_episodes": 100,
 "goal_value": 1000,
 "valuations" : true,
@@ -34,14 +36,15 @@
   "network_size": 1
 },
   {
-"grid_model": "obstacle",
-"learning_method": "REINFORCE",
+    "fname" : "_Net_2",
+    "grid_model": "obstacle",
+    "learning_method": "REINFORCE",
 "max_runs": 2000,
 "maxsteps": 100,
 "constants": "N=6",
 "video_path": "newvideos/HYPER",
 "obs_level": "BELIEF_SUPPORT",
-"eval_interval": 2000,
+"eval_interval": 200,
 "eval_episodes": 100,
 "goal_value": 1000,
 "valuations" : true,
@@ -51,6 +54,7 @@
 "network_size": 2
 },
 {
+      "fname" : "_Net_2",
 "grid_model": "obstacle",
 "learning_method": "REINFORCE",
 "max_runs": 2000,
@@ -58,7 +62,7 @@
 "constants": "N=6",
 "video_path": "newvideos/HYPER",
 "obs_level": "BELIEF_SUPPORT",
-"eval_interval": 2000,
+"eval_interval": 200,
 "eval_episodes": 100,
 "goal_value": 1000,
 "valuations" : true,
@@ -68,6 +72,7 @@
   "network_size": 2
 },
    {
+     "fname" : "_Net_5",
 "grid_model": "obstacle",
 "learning_method": "REINFORCE",
 "max_runs": 2000,
@@ -75,7 +80,7 @@
 "constants": "N=6",
 "video_path": "newvideos/HYPER",
 "obs_level": "BELIEF_SUPPORT",
-"eval_interval": 2000,
+"eval_interval": 200,
 "eval_episodes": 100,
 "goal_value": 1000,
 "valuations" : true,
@@ -85,6 +90,7 @@
 "network_size": 5
 },
 {
+  "fname" : "_Net_5",
 "grid_model": "obstacle",
 "learning_method": "REINFORCE",
 "max_runs": 2000,
@@ -92,7 +98,7 @@
 "constants": "N=6",
 "video_path": "newvideos/HYPER",
 "obs_level": "BELIEF_SUPPORT",
-"eval_interval": 2000,
+"eval_interval": 200,
 "eval_episodes": 100,
 "goal_value": 1000,
 "valuations" : true,
@@ -102,6 +108,7 @@
   "network_size": 5
 },
    {
+     "fname" : "_Net_10",
 "grid_model": "obstacle",
 "learning_method": "REINFORCE",
 "max_runs": 2000,
@@ -109,7 +116,7 @@
 "constants": "N=6",
 "video_path": "newvideos/HYPER",
 "obs_level": "BELIEF_SUPPORT",
-"eval_interval": 2000,
+"eval_interval": 200,
 "eval_episodes": 100,
 "goal_value": 1000,
 "valuations" : true,
@@ -119,6 +126,7 @@
 "network_size": 10
 },
 {
+  "fname" : "_Net_10",
 "grid_model": "obstacle",
 "learning_method": "REINFORCE",
 "max_runs": 2000,
@@ -126,7 +134,7 @@
 "constants": "N=6",
 "video_path": "newvideos/HYPER",
 "obs_level": "BELIEF_SUPPORT",
-"eval_interval": 2000,
+"eval_interval": 200,
 "eval_episodes": 100,
 "goal_value": 1000,
 "valuations" : true,
@@ -136,6 +144,7 @@
   "network_size": 10
 },
    {
+     "fname" : "_Net_20",
 "grid_model": "obstacle",
 "learning_method": "REINFORCE",
 "max_runs": 2000,
@@ -143,7 +152,7 @@
 "constants": "N=6",
 "video_path": "newvideos/HYPER",
 "obs_level": "BELIEF_SUPPORT",
-"eval_interval": 2000,
+"eval_interval": 200,
 "eval_episodes": 100,
 "goal_value": 1000,
 "valuations" : true,
@@ -153,6 +162,7 @@
 "network_size": 20
 },
 {
+  "fname" : "_Net_20",
 "grid_model": "obstacle",
 "learning_method": "REINFORCE",
 "max_runs": 2000,
@@ -160,7 +170,7 @@
 "constants": "N=6",
 "video_path": "newvideos/HYPER",
 "obs_level": "BELIEF_SUPPORT",
-"eval_interval": 2000,
+"eval_interval": 200,
 "eval_episodes": 100,
 "goal_value": 1000,
 "valuations" : true,
@@ -170,6 +180,7 @@
   "network_size": 20
 },
    {
+     "fname" : "_Net_50",
 "grid_model": "obstacle",
 "learning_method": "REINFORCE",
 "max_runs": 2000,
@@ -177,7 +188,7 @@
 "constants": "N=6",
 "video_path": "newvideos/HYPER",
 "obs_level": "BELIEF_SUPPORT",
-"eval_interval": 2000,
+"eval_interval": 200,
 "eval_episodes": 100,
 "goal_value": 1000,
 "valuations" : true,
@@ -187,6 +198,7 @@
 "network_size": 50
 },
 {
+  "fname" : "_Net_50",
 "grid_model": "obstacle",
 "learning_method": "REINFORCE",
 "max_runs": 2000,
@@ -194,7 +206,7 @@
 "constants": "N=6",
 "video_path": "newvideos/HYPER",
 "obs_level": "BELIEF_SUPPORT",
-"eval_interval": 2000,
+"eval_interval": 200,
 "eval_episodes": 100,
 "goal_value": 1000,
 "valuations" : true,
@@ -204,6 +216,7 @@
   "network_size": 50
 },
    {
+     "fname" : "_Net_100",
 "grid_model": "obstacle",
 "learning_method": "REINFORCE",
 "max_runs": 2000,
@@ -211,7 +224,7 @@
 "constants": "N=6",
 "video_path": "newvideos/HYPER",
 "obs_level": "BELIEF_SUPPORT",
-"eval_interval": 2000,
+"eval_interval": 200,
 "eval_episodes": 100,
 "goal_value": 1000,
 "valuations" : true,
@@ -221,6 +234,7 @@
 "network_size": 100
 },
 {
+  "fname" : "_Net_100",
 "grid_model": "obstacle",
 "learning_method": "REINFORCE",
 "max_runs": 2000,
@@ -228,7 +242,7 @@
 "constants": "N=6",
 "video_path": "newvideos/HYPER",
 "obs_level": "BELIEF_SUPPORT",
-"eval_interval": 2000,
+"eval_interval": 200,
 "eval_episodes": 100,
 "goal_value": 1000,
 "valuations" : true,
@@ -237,6 +251,7 @@
 "prob" : 0,
   "network_size": 100
 }, {
+    "fname" : "_Net_200",
 "grid_model": "obstacle",
 "learning_method": "REINFORCE",
 "max_runs": 2000,
@@ -244,7 +259,7 @@
 "constants": "N=6",
 "video_path": "newvideos/HYPER",
 "obs_level": "BELIEF_SUPPORT",
-"eval_interval": 2000,
+"eval_interval": 200,
 "eval_episodes": 100,
 "goal_value": 1000,
 "valuations" : true,
@@ -254,6 +269,7 @@
 "network_size": 200
 },
 {
+      "fname" : "_Net_200",
 "grid_model": "obstacle",
 "learning_method": "REINFORCE",
 "max_runs": 2000,
@@ -261,7 +277,7 @@
 "constants": "N=6",
 "video_path": "newvideos/HYPER",
 "obs_level": "BELIEF_SUPPORT",
-"eval_interval": 2000,
+"eval_interval": 200,
 "eval_episodes": 100,
 "goal_value": 1000,
 "valuations" : true,
@@ -270,6 +286,7 @@
 "prob" : 0,
   "network_size": 200
 }, {
+        "fname" : "_Net_500",
 "grid_model": "obstacle",
 "learning_method": "REINFORCE",
 "max_runs": 2000,
@@ -277,7 +294,7 @@
 "constants": "N=6",
 "video_path": "newvideos/HYPER",
 "obs_level": "BELIEF_SUPPORT",
-"eval_interval": 2000,
+"eval_interval": 200,
 "eval_episodes": 100,
 "goal_value": 1000,
 "valuations" : true,
@@ -287,6 +304,7 @@
 "network_size": 500
 },
 {
+      "fname" : "_Net_500",
 "grid_model": "obstacle",
 "learning_method": "REINFORCE",
 "max_runs": 2000,
@@ -294,7 +312,7 @@
 "constants": "N=6",
 "video_path": "newvideos/HYPER",
 "obs_level": "BELIEF_SUPPORT",
-"eval_interval": 2000,
+"eval_interval": 200,
 "eval_episodes": 100,
 "goal_value": 1000,
 "valuations" : true,
@@ -304,6 +322,7 @@
   "network_size": 500
 },
    {
+         "fname" : "_Net_1000",
 "grid_model": "obstacle",
 "learning_method": "REINFORCE",
 "max_runs": 2000,
@@ -311,7 +330,7 @@
 "constants": "N=6",
 "video_path": "newvideos/HYPER",
 "obs_level": "BELIEF_SUPPORT",
-"eval_interval": 2000,
+"eval_interval": 200,
 "eval_episodes": 100,
 "goal_value": 1000,
 "valuations" : true,
@@ -321,6 +340,7 @@
 "network_size": 1000
 },
 {
+      "fname" : "_Net_1000",
 "grid_model": "obstacle",
 "learning_method": "REINFORCE",
 "max_runs": 2000,
@@ -328,7 +348,7 @@
 "constants": "N=6",
 "video_path": "newvideos/HYPER",
 "obs_level": "BELIEF_SUPPORT",
-"eval_interval": 2000,
+"eval_interval": 200,
 "eval_episodes": 100,
 "goal_value": 1000,
 "valuations" : true,
@@ -338,6 +358,7 @@
   "network_size": 1000
 },
    {
+         "fname" : "_Net_5000",
 "grid_model": "obstacle",
 "learning_method": "REINFORCE",
 "max_runs": 2000,
@@ -345,7 +366,7 @@
 "constants": "N=6",
 "video_path": "newvideos/HYPER",
 "obs_level": "BELIEF_SUPPORT",
-"eval_interval": 2000,
+"eval_interval": 200,
 "eval_episodes": 100,
 "goal_value": 1000,
 "valuations" : true,
@@ -355,6 +376,7 @@
 "network_size": 5000
 },
 {
+         "fname" : "_Net_5000",
 "grid_model": "obstacle",
 "learning_method": "REINFORCE",
 "max_runs": 2000,
@@ -362,7 +384,7 @@
 "constants": "N=6",
 "video_path": "newvideos/HYPER",
 "obs_level": "BELIEF_SUPPORT",
-"eval_interval": 2000,
+"eval_interval": 200,
 "eval_episodes": 100,
 "goal_value": 1000,
 "valuations" : true,

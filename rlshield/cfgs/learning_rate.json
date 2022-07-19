@@ -1,6 +1,6 @@
 {"refuel_reinforce":[
   {
-"fname" : "_NoShield_Alpha_1e-3",
+"fname" : "_Alpha_1e-3",
 "grid_model": "obstacle",
 "learning_method": "REINFORCE",
 "max_runs": 2000,
@@ -8,7 +8,7 @@
 "constants": "N=6",
 "video_path": "newvideos/HYPER",
 "obs_level": "BELIEF_SUPPORT",
-"eval_interval": 2000,
+"eval_interval": 200,
 "eval_episodes": 100,
 "goal_value": 1000,
 "valuations" : true,
@@ -18,7 +18,7 @@
 "alpha": 0.001
 },
 {
-  "fname" : "_Shield_Alpha_1e-3",
+  "fname" : "_Alpha_1e-3",
 "grid_model": "obstacle",
 "learning_method": "REINFORCE",
 "max_runs": 2000,
@@ -26,7 +26,7 @@
 "constants": "N=6",
 "video_path": "newvideos/HYPER",
 "obs_level": "BELIEF_SUPPORT",
-"eval_interval": 2000,
+"eval_interval": 200,
 "eval_episodes": 100,
 "goal_value": 1000,
 "valuations" : true,
@@ -36,7 +36,7 @@
 "alpha": 0.001
 },
   {
-    "fname" : "_NoShield_Alpha_5e-3",
+    "fname" : "_Alpha_5e-3",
 "grid_model": "obstacle",
 "learning_method": "REINFORCE",
 "max_runs": 2000,
@@ -54,7 +54,7 @@
 "alpha": 0.005
 },
 {
-  "fname" : "_Shield_Alpha_5e-3",
+  "fname" : "_Alpha_5e-3",
 "grid_model": "obstacle",
 "learning_method": "REINFORCE",
 "max_runs": 2000,
@@ -62,7 +62,7 @@
 "constants": "N=6",
 "video_path": "newvideos/HYPER",
 "obs_level": "BELIEF_SUPPORT",
-"eval_interval": 2000,
+"eval_interval": 200,
 "eval_episodes": 100,
 "goal_value": 1000,
 "valuations" : true,
@@ -72,7 +72,7 @@
 "alpha": 0.005
 },
    {
-     "fname" : "_NoShield_Alpha_1e-2",
+     "fname" : "_Alpha_1e-2",
 "grid_model": "obstacle",
 "learning_method": "REINFORCE",
 "max_runs": 2000,
@@ -80,7 +80,7 @@
 "constants": "N=6",
 "video_path": "newvideos/HYPER",
 "obs_level": "BELIEF_SUPPORT",
-"eval_interval": 2000,
+"eval_interval": 200,
 "eval_episodes": 100,
 "goal_value": 1000,
 "valuations" : true,
@@ -90,7 +90,7 @@
 "alpha": 0.01
 },
 {
-  "fname" : "_Shield_Alpha_1e-2",
+  "fname" : "_Alpha_1e-2",
 "grid_model": "obstacle",
 "learning_method": "REINFORCE",
 "max_runs": 2000,
@@ -98,7 +98,7 @@
 "constants": "N=6",
 "video_path": "newvideos/HYPER",
 "obs_level": "BELIEF_SUPPORT",
-"eval_interval": 2000,
+"eval_interval": 200,
 "eval_episodes": 100,
 "goal_value": 1000,
 "valuations" : true,
@@ -108,7 +108,7 @@
 "alpha": 0.01
 },
    {
-     "fname" : "_NoShield_Alpha_2e-2",
+     "fname" : "_Alpha_2e-2",
 "grid_model": "obstacle",
 "learning_method": "REINFORCE",
 "max_runs": 2000,
@@ -116,7 +116,7 @@
 "constants": "N=6",
 "video_path": "newvideos/HYPER",
 "obs_level": "BELIEF_SUPPORT",
-"eval_interval": 2000,
+"eval_interval": 200,
 "eval_episodes": 100,
 "goal_value": 1000,
 "valuations" : true,
@@ -126,15 +126,15 @@
 "alpha": 0.02
 },
 {
-  "fname" : "_Shield_Alpha_2e-2",
+  "fname" : "_Alpha_2e-2",
 "grid_model": "obstacle",
 "learning_method": "REINFORCE",
-"max_runs": 2000,
+"max_runs": 200,
 "maxsteps": 100,
 "constants": "N=6",
 "video_path": "newvideos/HYPER",
 "obs_level": "BELIEF_SUPPORT",
-"eval_interval": 2000,
+"eval_interval": 200,
 "eval_episodes": 100,
 "goal_value": 1000,
 "valuations" : true,
@@ -144,7 +144,7 @@
 "alpha": 0.02
 },
    {
-     "fname" : "_NoShield_Alpha_3e-2",
+     "fname" : "_Alpha_3e-2",
 "grid_model": "obstacle",
 "learning_method": "REINFORCE",
 "max_runs": 2000,
@@ -152,7 +152,7 @@
 "constants": "N=6",
 "video_path": "newvideos/HYPER",
 "obs_level": "BELIEF_SUPPORT",
-"eval_interval": 2000,
+"eval_interval": 200,
 "eval_episodes": 100,
 "goal_value": 1000,
 "valuations" : true,
@@ -162,7 +162,7 @@
 "alpha": 0.03
 },
 {
-  "fname" : "_Shield_Alpha_3e-2",
+  "fname" : "_Alpha_3e-2",
 "grid_model": "obstacle",
 "learning_method": "REINFORCE",
 "max_runs": 2000,
@@ -170,7 +170,7 @@
 "constants": "N=6",
 "video_path": "newvideos/HYPER",
 "obs_level": "BELIEF_SUPPORT",
-"eval_interval": 2000,
+"eval_interval": 200,
 "eval_episodes": 100,
 "goal_value": 1000,
 "valuations" : true,
@@ -180,7 +180,7 @@
 "alpha": 0.03
 },
    {
-     "fname" : "_NoShield_Alpha_5e-2",
+     "fname" : "_Alpha_5e-2",
 "grid_model": "obstacle",
 "learning_method": "REINFORCE",
 "max_runs": 2000,
@@ -188,7 +188,7 @@
 "constants": "N=6",
 "video_path": "newvideos/HYPER",
 "obs_level": "BELIEF_SUPPORT",
-"eval_interval": 2000,
+"eval_interval": 200,
 "eval_episodes": 100,
 "goal_value": 1000,
 "valuations" : true,
@@ -198,7 +198,7 @@
 "alpha": 0.05
 },
 {
-  "fname" : "_Shield_Alpha_5e-2",
+  "fname" : "_Alpha_5e-2",
 "grid_model": "obstacle",
 "learning_method": "REINFORCE",
 "max_runs": 2000,
@@ -206,7 +206,7 @@
 "constants": "N=6",
 "video_path": "newvideos/HYPER",
 "obs_level": "BELIEF_SUPPORT",
-"eval_interval": 2000,
+"eval_interval": 200,
 "eval_episodes": 100,
 "goal_value": 1000,
 "valuations" : true,
@@ -216,7 +216,7 @@
 "alpha": 0.05
 },
    {
-     "fname" : "_NoShield_Alpha_8e-2",
+     "fname" : "_Alpha_8e-2",
 "grid_model": "obstacle",
 "learning_method": "REINFORCE",
 "max_runs": 2000,
@@ -224,7 +224,7 @@
 "constants": "N=6",
 "video_path": "newvideos/HYPER",
 "obs_level": "BELIEF_SUPPORT",
-"eval_interval": 2000,
+"eval_interval": 200,
 "eval_episodes": 100,
 "goal_value": 1000,
 "valuations" : true,
@@ -234,7 +234,7 @@
 "alpha": 0.08
 },
 {
-  "fname" : "_Shield_Alpha_8e-2",
+  "fname" : "_Alpha_8e-2",
 "grid_model": "obstacle",
 "learning_method": "REINFORCE",
 "max_runs": 2000,
@@ -242,7 +242,7 @@
 "constants": "N=6",
 "video_path": "newvideos/HYPER",
 "obs_level": "BELIEF_SUPPORT",
-"eval_interval": 2000,
+"eval_interval": 200,
 "eval_episodes": 100,
 "goal_value": 1000,
 "valuations" : true,
@@ -251,7 +251,7 @@
 "prob" : 0,
 "alpha": 0.08
 }, {
-    "fname" : "_NoShield_Alpha_1e-1",
+    "fname" : "_Alpha_1e-1",
 "grid_model": "obstacle",
 "learning_method": "REINFORCE",
 "max_runs": 2000,
@@ -259,7 +259,7 @@
 "constants": "N=6",
 "video_path": "newvideos/HYPER",
 "obs_level": "BELIEF_SUPPORT",
-"eval_interval": 2000,
+"eval_interval": 200,
 "eval_episodes": 100,
 "goal_value": 1000,
 "valuations" : true,
@@ -269,7 +269,7 @@
 "alpha": 0.1
 },
 {
-  "fname" : "_Shield_Alpha_1e-1",
+  "fname" : "_Alpha_1e-1",
 "grid_model": "obstacle",
 "learning_method": "REINFORCE",
 "max_runs": 2000,
@@ -277,7 +277,7 @@
 "constants": "N=6",
 "video_path": "newvideos/HYPER",
 "obs_level": "BELIEF_SUPPORT",
-"eval_interval": 2000,
+"eval_interval": 200,
 "eval_episodes": 100,
 "goal_value": 1000,
 "valuations" : true,
@@ -286,7 +286,7 @@
 "prob" : 0,
 "alpha": 0.1
 }, {
-    "fname" : "_NoShield_Alpha_2e-1",
+    "fname" : "_Alpha_2e-1",
 "grid_model": "obstacle",
 "learning_method": "REINFORCE",
 "max_runs": 2000,
@@ -294,7 +294,7 @@
 "constants": "N=6",
 "video_path": "newvideos/HYPER",
 "obs_level": "BELIEF_SUPPORT",
-"eval_interval": 2000,
+"eval_interval": 200,
 "eval_episodes": 100,
 "goal_value": 1000,
 "valuations" : true,
@@ -304,7 +304,7 @@
 "alpha": 0.2
 },
 {
-  "fname" : "_Shield_Alpha_2e-1",
+  "fname" : "_Alpha_2e-1",
 "grid_model": "obstacle",
 "learning_method": "REINFORCE",
 "max_runs": 2000,
@@ -312,7 +312,7 @@
 "constants": "N=6",
 "video_path": "newvideos/HYPER",
 "obs_level": "BELIEF_SUPPORT",
-"eval_interval": 2000,
+"eval_interval": 200,
 "eval_episodes": 100,
 "goal_value": 1000,
 "valuations" : true,
@@ -322,7 +322,7 @@
 "alpha": 0.2
 },
    {
-     "fname" : "_NoShield_Alpha_3e-1",
+     "fname" : "_Alpha_3e-1",
 "grid_model": "obstacle",
 "learning_method": "REINFORCE",
 "max_runs": 2000,
@@ -330,7 +330,7 @@
 "constants": "N=6",
 "video_path": "newvideos/HYPER",
 "obs_level": "BELIEF_SUPPORT",
-"eval_interval": 2000,
+"eval_interval": 200,
 "eval_episodes": 100,
 "goal_value": 1000,
 "valuations" : true,
@@ -340,7 +340,7 @@
 "alpha": 0.3
 },
 {
-  "fname" : "_Shield_Alpha_3e-1",
+  "fname" : "_Alpha_3e-1",
 "grid_model": "obstacle",
 "learning_method": "REINFORCE",
 "max_runs": 2000,
@@ -348,7 +348,7 @@
 "constants": "N=6",
 "video_path": "newvideos/HYPER",
 "obs_level": "BELIEF_SUPPORT",
-"eval_interval": 2000,
+"eval_interval": 200,
 "eval_episodes": 100,
 "goal_value": 1000,
 "valuations" : true,
@@ -358,7 +358,7 @@
 "alpha": 0.3
 },
    {
-     "fname" : "_NoShield_Alpha_5e-1",
+     "fname" : "_Alpha_5e-1",
 "grid_model": "obstacle",
 "learning_method": "REINFORCE",
 "max_runs": 2000,
@@ -366,7 +366,7 @@
 "constants": "N=6",
 "video_path": "newvideos/HYPER",
 "obs_level": "BELIEF_SUPPORT",
-"eval_interval": 2000,
+"eval_interval": 200,
 "eval_episodes": 100,
 "goal_value": 1000,
 "valuations" : true,
@@ -376,7 +376,7 @@
 "alpha": 0.5
 },
 {
-  "fname" : "_Shield_Alpha_5e-1",
+  "fname" : "_Alpha_5e-1",
 "grid_model": "obstacle",
 "learning_method": "REINFORCE",
 "max_runs": 2000,
@@ -384,7 +384,7 @@
 "constants": "N=6",
 "video_path": "newvideos/HYPER",
 "obs_level": "BELIEF_SUPPORT",
-"eval_interval": 2000,
+"eval_interval": 200,
 "eval_episodes": 100,
 "goal_value": 1000,
 "valuations" : true,
