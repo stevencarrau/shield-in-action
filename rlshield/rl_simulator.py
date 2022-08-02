@@ -138,39 +138,40 @@ def solicit_input(recorder,executor,maxsteps):
     recorder.end_path(finished)
 
 
-def record_track(recorder,executor,agent,policy,maxsteps):
-    state = executor._simulator.restart()
-    finished = False
-    executor._shield.reset()
-    recorder.start_path()
-    recorder.record_state(state)
-    recorder.record_belief(executor._shield.list_support())
-    for n in range(maxsteps):
-        actions = executor._simulator.available_actions()
-        safe_actions = executor._shield.shielded_actions(range(len(actions)))
-        logger.debug(f"Number of actions: {actions}. Safe action indices: {safe_actions}")
-        time_step = executor.current_time_step()
-        action_step = policy.action(time_step) #agent(policy,time_step, allowed_actions=safe_actions)
-        action = executor.apply_action(action_step.action)
-        executor._simulator.step(action)
-        state = executor._simulator._report_state()
-        executor._shield.track(action, executor._model.get_observation(state))
-        assert state in executor._shield.list_support()
-
-        recorder.record_available_actions(actions)
-        recorder.record_allowed_actions(safe_actions)
-        recorder.record_selected_action(action)
+def record_track(recorder,executor,agent,policy,maxsteps,no_tracks=1):
+    for _ in range(no_tracks):
+        state = executor._simulator.restart()
+        finished = False
+        executor._shield.reset()
+        recorder.start_path()
         recorder.record_state(state)
         recorder.record_belief(executor._shield.list_support())
-        if executor._simulator.is_done():
-            logger.info(f"Done after {n} steps!")
-            finished = True
-            break
-    actions = executor._simulator.available_actions()
-    safe_actions = executor._shield.shielded_actions(range(len(actions)))
-    recorder.record_available_actions(actions)
-    recorder.record_allowed_actions(safe_actions)
-    recorder.end_path(finished)
+        for n in range(maxsteps):
+            actions = executor._simulator.available_actions()
+            safe_actions = executor._shield.shielded_actions(range(len(actions)))
+            logger.debug(f"Number of actions: {actions}. Safe action indices: {safe_actions}")
+            time_step = executor.current_time_step()
+            action_step = policy.action(time_step) #agent(policy,time_step, allowed_actions=safe_actions)
+            action = executor.apply_action(action_step.action)
+            executor._simulator.step(action)
+            state = executor._simulator._report_state()
+            executor._shield.track(action, executor._model.get_observation(state))
+            assert state in executor._shield.list_support()
+
+            recorder.record_available_actions(actions)
+            recorder.record_allowed_actions(safe_actions)
+            recorder.record_selected_action(action)
+            recorder.record_state(state)
+            recorder.record_belief(executor._shield.list_support())
+            if executor._simulator.is_done():
+                logger.info(f"Done after {n} steps!")
+                finished = True
+                break
+        actions = executor._simulator.available_actions()
+        safe_actions = executor._shield.shielded_actions(range(len(actions)))
+        recorder.record_available_actions(actions)
+        recorder.record_allowed_actions(safe_actions)
+        recorder.end_path(finished)
 
 class TF_Environment(SimulationExecutor):
     def __init__(self,model,shield,obs_length=1,valuations=False,obs_type='BELIEF_SUPPORT',maxsteps=100,goal_value=1000):
@@ -345,7 +346,7 @@ class TF_Environment(SimulationExecutor):
                 print('step = {0}: Average Return = {1}'.format(step, avg_return))
                 returns.append((step,)+avg_return)
 
-        # record_track(recorder,eval_env,RL_agent.agent,RL_agent.agent.policy,maxsteps)
+        record_track(recorder,eval_env,RL_agent.agent,RL_agent.agent.policy,self.maxsteps,3)
         return returns
 
     def simulate_deep_RL_fixed_policy(self, recorder, total_nr_runs=5, eval_interval=1000, eval_episodes=10, eval_env=None,
@@ -408,7 +409,7 @@ class TF_Environment(SimulationExecutor):
                 print('step = {0}: Average Return = {1}'.format(step, avg_return))
                 returns.append((step,) + avg_return)
 
-        # record_track(recorder,eval_env,RL_agent.agent,RL_agent.agent.policy,maxsteps)
+        # record_track(recorder,eval_env,RL_agent.agent,RL_agent.agent.policy,self.maxsteps)
         return returns
 
     def observe(self):
@@ -439,9 +440,9 @@ class TF_Environment(SimulationExecutor):
 
     def get_observation_keywords(self):
         if self.obs_type == 'STATE_LEVEL':
-            keywords = set([i[1:-2] for i in str(self._model.state_valuations.get_json(0)).split()[1:-1:2]])
+            keywords = list([i[1:-2] for i in str(self._model.state_valuations.get_json(0)).split()[1:-1:2]])
         else:
-            keywords = set([i[1:-2] for i in str(self._model.observation_valuations.get_json(0)).split()[1:-1:2]])
+            keywords = list([i[1:-2] for i in str(self._model.observation_valuations.get_json(0)).split()[1:-1:2]])
         return keywords
 
     def get_choice_labels(self):
