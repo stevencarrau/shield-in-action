@@ -1,7 +1,9 @@
 import json
 import shield
+import os
 
-filenames = ['DQN','DDQN','PPO','SAC','']
+filenames = ['PPO','SAC']
+os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
 for filename in filenames:
    with open('cfgs/'+filename+'.json') as f:
       load_file = json.load(f)
