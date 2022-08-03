@@ -2,10 +2,6 @@ import random
 
 import numpy as np
 import stormpy as sp
-import stormpy.examples
-import stormpy.examples.files
-import stormpy.simulator
-import stormpy.pomdp
 from tf_agents.trajectories import time_step as ts
 from tf_agents.typing import types
 from tf_agents.trajectories import trajectory
@@ -100,8 +96,8 @@ def compute_avg_return(env, agent,policy, num_episodes=10,max_steps=100):
     episode_rewards = np.array(episodes)
     avg_return = total_return / num_episodes
     min_value = 0 if env.goal_value==10 else -1000
-    return avg_return.numpy(),np.quantile(episode_rewards,0.3173),np.quantile(episode_rewards,0.6827),np.clip(avg_return.numpy()-np.std(episode_rewards),min_value,env.goal_value),np.clip(avg_return.numpy()+np.std(episode_rewards),min_value,env.goal_value)
-
+    return_set = avg_return.numpy(),np.quantile(episode_rewards,0.3173),np.quantile(episode_rewards,0.6827),np.clip(avg_return.numpy()-np.std(episode_rewards),min_value,env.goal_value),np.clip(avg_return.numpy()+np.std(episode_rewards),min_value,env.goal_value)
+    return return_set,episodes
 def solicit_input(recorder,executor,maxsteps):
     state = executor._simulator.restart()
     finished = False
@@ -311,7 +307,7 @@ class TF_Environment(SimulationExecutor):
             data_spec=RL_agent.agent.collect_data_spec,
             batch_size=1,
             max_length=self.maxsteps)
-        avg_return = compute_avg_return(eval_env, RL_agent.agent,RL_agent.agent.policy,num_eval_episodes,max_steps=self.maxsteps)
+        avg_return,episodes = compute_avg_return(eval_env, RL_agent.agent,RL_agent.agent.policy,num_eval_episodes,max_steps=self.maxsteps)
         # record_track(recorder, eval_env, RL_agent.agent, RL_agent.agent.policy, maxsteps)
         self.reset()
         collect_data(self, RL_agent.agent,RL_agent.agent.collect_policy, buffer,steps =2)
@@ -319,6 +315,7 @@ class TF_Environment(SimulationExecutor):
         iterator = iter(dataset)
         RL_agent.agent.train = common.function(RL_agent.agent.train)
         returns = [(0,)+avg_return]
+        episodes_list = [[0]+episodes]
         rand_pol = tf_agents.policies.random_tf_policy.RandomTFPolicy(self.time_step_spec,self.act_spec,observation_and_action_constraint_splitter=RL_agent.observation_and_action_constraint_splitter)
         print(f'Random policy return: {compute_avg_return(eval_env,RL_agent.agent,rand_pol,10,max_steps=self.maxsteps)}')
 
@@ -342,12 +339,13 @@ class TF_Environment(SimulationExecutor):
                 print('step = {0}: loss = {1}'.format(step, train_loss))
 
             if step % eval_interval == 0:
-                avg_return = compute_avg_return(eval_env, RL_agent.agent, RL_agent.agent.policy, num_eval_episodes,max_steps=self.maxsteps)
+                avg_return,episodes = compute_avg_return(eval_env, RL_agent.agent, RL_agent.agent.policy, num_eval_episodes,max_steps=self.maxsteps)
                 print('step = {0}: Average Return = {1}'.format(step, avg_return))
                 returns.append((step,)+avg_return)
+                episodes_list.append([step]+episodes)
 
         record_track(recorder,eval_env,RL_agent.agent,RL_agent.agent.policy,self.maxsteps,3)
-        return returns
+        return returns,episodes_list
 
     def simulate_deep_RL_fixed_policy(self, recorder, total_nr_runs=5, eval_interval=1000, eval_episodes=10, eval_env=None,
                          agent_arg='DQN', experience_set=None,prob=0.2):

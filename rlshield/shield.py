@@ -24,11 +24,19 @@ import matplotlib.pyplot as plt
 
 
 from gridstorm.plotter import Plotter
-import gridstorm.models as models
+
 
 import logging
 logger = logging.getLogger(__name__)
 #logging.basicConfig(format='%(levelname)s:%(message)s', level=logging.INFO)
+experiment_names = [
+    "avoid",
+    "refuel",
+    'obstacle',
+    "intercept",
+    'evade',
+    'rocks'
+]
 
 def compute_winning_region(model, formula, initial=True):
     options = sp.pomdp.IterativeQualitativeSearchOptions()
@@ -44,6 +52,18 @@ def compute_winning_region(model, formula, initial=True):
 
 def construct_otf_shield(model, winning_region):
     return sp.pomdp.BeliefSupportWinningRegionQueryInterfaceDouble(model, winning_region)
+
+def build_model(input):
+    prism_program = sp.parse_prism_program(input.path)
+    prop = sp.parse_properties_for_prism_program(input.properties[0],prism_program)[0]
+    prism_program, props = stormpy.preprocess_symbolic_input(prism_program, [prop], input.constants)
+    prop = props[0]
+    prism_program = prism_program.as_prism_program()
+    raw_formula = prop.raw_formula
+    logger.info("Construct POMDP representation...")
+    model = build_pomdp(prism_program, raw_formula)
+    model = sp.pomdp.make_canonic(model)
+    return model,prism_program,raw_formula
 
 def build_pomdp(program, formula):
     options = stormpy.BuilderOptions([formula])
@@ -244,7 +264,7 @@ def main(cfg=None):
     else:
         parser = argparse.ArgumentParser(description='The shielded POMDP simulator.')
         model_group = parser.add_mutually_exclusive_group(required=True)
-        model_group.add_argument('--grid-model', '-m', help=f'Model from the gridworld-by-storm visualisation set, choose from {str(experiment_to_grid_model_names.keys())}')
+        model_group.add_argument('--grid-model', '-m', help=f'Model from the gridworld-by-storm visualisation set, choose from {str(experiment_names)}')
         model_group.add_argument('--prism', help="Specify model from prism file")
         parser.add_argument('--prop', help='Specify property string directly')
         parser.add_argument('--constants', '-c', help="Constants to select the instance of the model", default="")
@@ -287,27 +307,52 @@ def main(cfg=None):
     random.seed(args.seed)
     if args.grid_model:
         logger.info("Look up problem definition....")
-        experiment_to_grid_model_names = {"avoid": models.surveillance,"refuel": models.refuel,'obstacle': models.obstacle,"intercept": models.intercept,'evade': models.evade,'rocks': models.rocks}
         if hasattr(args,'full_obs'):
             if args.full_obs:
-                import gridfull.models as full_models
-                experiment_to_grid_model_names = {
-                    "avoid": full_models.surveillance,
-                    "refuel": full_models.refuel,
-                    'obstacle': full_models.obstacle,
-                    "intercept": full_models.intercept,
-                    'evade': full_models.evade,
-                    'rocks': full_models.rocks
-                }
+                import gridfull.models as models
+                if hasattr(args,'nonsparse'):
+                    if args.nonsparse:
+                        import gridfullsparse.models as models_learn
+                    else:
+                        import gridfull.models as models_learn
+                else:
+                    import gridfull.models as models_learn
+            else:
+                import gridstorm.models as models
+                if hasattr(args,'nonsparse'):
+                    if args.nonsparse:
+                        import gridsparse.models as models_learn
+                    else:
+                        import gridstorm.models as models_learn
+                else:
+                    import gridstorm.models as models_learn
+        else:
+            import gridstorm.models as models
+            if hasattr(args, 'nonsparse'):
+                if args.nonsparse:
+                    import gridsparse.models as models_learn
+                else:
+                    import gridstorm.models as models_learn
+            else:
+                import gridstorm.models as models_learn
+        experiment_to_grid_model_names = {"avoid": models_learn.surveillance, "refuel": models_learn.refuel,
+                                          'obstacle': models_learn.obstacle, "intercept": models_learn.intercept,
+                                          'evade': models_learn.evade, 'rocks': models_learn.rocks}
+        eval_to_grid_model_names = {"avoid": models.surveillance, "refuel": models.refuel,
+                                          'obstacle': models.obstacle, "intercept": models.intercept,
+                                          'evade': models.evade, 'rocks': models.rocks}
         model = experiment_to_grid_model_names[args.grid_model]
+        eval_model = eval_to_grid_model_names[args.grid_model]
         model_constants = list(inspect.signature(model).parameters.keys())
         if args.constants is None and len(model_constants) > 0:
             raise RuntimeError("Model constants {} defined, but not given by command line".format(",".join(model_constants)))
         constants = dict(item.split('=') for item in args.constants.split(","))
-        input = model(**constants)
-        # input.properties.append("Rmin=? [F \"goal\"]")
+        learn_input = model(**constants)
+        eval_input = eval_model(**constants)
+        input = learn_input
     else:
         input = ManualInput(args.prism, args.prop, args.constants)
+        eval_input = None
         constants = dict(item.split('=') for item in args.constants.split(","))
 
 
@@ -326,26 +371,21 @@ def main(cfg=None):
 
     initial = False
     logger.info("Loading problem definition....")
-    prism_program = sp.parse_prism_program(input.path)
-    prop = sp.parse_properties_for_prism_program(input.properties[0], prism_program)[0]
-    prism_program, props = stormpy.preprocess_symbolic_input(prism_program, [prop], input.constants)
-    prop = props[0]
-    prism_program = prism_program.as_prism_program()
-    raw_formula = prop.raw_formula
-
-    logger.info("Construct POMDP representation...")
-    model = build_pomdp(prism_program, raw_formula)
-    model = sp.pomdp.make_canonic(model)
+    learn_model,prism_program,raw_formula = build_model(input)
+    if eval_input:
+        eval_model,_,_ = build_model(eval_input)
+    else:
+        eval_model,_,_ = learn_model
     logger.info(model)
 
     #if model.hash() != hash:
     #    raise RuntimeError("Winning Region does not agree with Model")
 
     if compute_shield:
-        winning_region = compute_winning_region(model, raw_formula, initial)
+        winning_region = compute_winning_region(learn_model, raw_formula, initial)
 
     if winning_region is not None:
-        otf_shield = construct_otf_shield(model, winning_region)
+        otf_shield = construct_otf_shield(learn_model, winning_region)
     elif args.noshield:
         otf_shield = NoShield()
     else:
@@ -361,9 +401,9 @@ def main(cfg=None):
         else:
             videoname = f"{args.grid_model}-{constant_values}-noshield"
 
-    tracker = Tracker(model, otf_shield)
+    tracker = Tracker(learn_model, otf_shield)
     if args.video_path:
-        renderer = Plotter(prism_program, input.annotations, model)
+        renderer = Plotter(prism_program, input.annotations, eval_model)
         if input.ego_icon is not None:
             renderer.load_ego_image(input.ego_icon.path, (0.6 / renderer._maxX))
         if args.title:
@@ -390,12 +430,14 @@ def main(cfg=None):
         result_fname = f""+args.fname
     else:
         result_fname = f"_Hyper_Param_Size_{args.network_size}_{obs_type}_valuations" if valuations else f"_{obs_type}"
-    eval_executor_shielded = TF_Environment(model,tracker,obs_length=1,maxsteps=args.maxsteps,obs_type=obs_type,valuations=valuations,goal_value=args.goal_value)
+    learn_executor = TF_Environment(learn_model,tracker,obs_length=1,maxsteps=args.maxsteps,obs_type=obs_type,valuations=valuations,goal_value=args.goal_value)
+    eval_executor = TF_Environment(eval_model,tracker,obs_length=1,maxsteps=args.maxsteps,obs_type=obs_type,valuations=valuations,goal_value=args.goal_value)
     print("Starting RL:\n")
     print(f"{videoname}{result_fname}")
-    G0 = eval_executor_shielded.simulate_deep_RL(recorder,total_nr_runs=args.max_runs, eval_interval=args.eval_interval,eval_episodes=args.eval_episodes,eval_env= eval_executor_shielded,agent_arg=args.learning_method,hyper_param=hyper_param)
+    G0,episodes = learn_executor.simulate_deep_RL(recorder,total_nr_runs=args.max_runs, eval_interval=args.eval_interval,eval_episodes=args.eval_episodes,eval_env= eval_executor,agent_arg=args.learning_method,hyper_param=hyper_param)
     np.savetxt(f"{output_path}/{videoname}{result_fname}.csv",np.array(G0),delimiter=' ')
-    recorder.save(output_path, f"{videoname}{result_fname}")
+    np.savetxt(f"{output_path}/{videoname}{result_fname}_Episodes.csv",np.array(episodes),delimiter=' ')
+    # recorder.save(output_path, f"{videoname}{result_fname}")
 
 if __name__ == "__main__":
     main()
