@@ -173,10 +173,11 @@ class TF_Environment(SimulationExecutor):
     def __init__(self,model,shield,obs_length=1,valuations=False,obs_type='BELIEF_SUPPORT',maxsteps=100,goal_value=1000):
         super().__init__(model,shield)
         self.shield_on = True
-        self.decay = 1
+        self.decay = 0
         self.obs_type = obs_type
         self.batch_size = 64
         self.goal_value = goal_value
+        self.shield_switch_episode = -1
         action_keywords = set()
         for s_i in range(self._model.nr_states):
             n_act = self._model.get_nr_available_actions(s_i)
@@ -241,10 +242,13 @@ class TF_Environment(SimulationExecutor):
         if self.shield_on:
             safe_actions = self._shield.shielded_actions(range(len(actions)))
         else:
-            # if np.random.random(1)[0] > self.decay:
-            #     safe_actions = self._shield.shielded_actions(range(len(actions))) ## Shield on
-            # else:
-            safe_actions = actions
+            if self.shield_switch_type == 'HARD':
+                safe_actions = actions
+            elif self.shield_switch_type == 'SOFT':
+                if np.random.random(1)[0] > self.decay:
+                    safe_actions = self._shield.shielded_actions(range(len(actions))) ## Shield on
+                else:
+                    safe_actions = actions
 
         if len(self._model.choice_labeling.get_labels_of_choice(self._model.get_choice_index(self._simulator._report_state(),0)))==0:
             mask_inds = [0]
@@ -320,6 +324,7 @@ class TF_Environment(SimulationExecutor):
         print(f'Random policy return: {compute_avg_return(eval_env,RL_agent.agent,rand_pol,10,max_steps=self.maxsteps)}')
 
         for _ in range(total_nr_runs):
+
             if agent_arg == 'REINFORCE':
                 collect_episode(self,RL_agent.agent.collect_policy,collect_steps_per_iteration,buffer)
                 experience = buffer.gather_all()
@@ -333,7 +338,6 @@ class TF_Environment(SimulationExecutor):
 
 
             step = int(RL_agent.agent.train_step_counter.numpy()/25) if agent_arg=='PPO' else RL_agent.agent.train_step_counter.numpy()
-            # step = self.episode_count
 
             if step % log_interval == 0:
                 print('step = {0}: loss = {1}'.format(step, train_loss))
@@ -344,8 +348,18 @@ class TF_Environment(SimulationExecutor):
                 returns.append((step,)+avg_return)
                 episodes_list.append([step]+episodes)
 
+            if step == self.shield_switch_episode:
+                self.shield_on = False
+
+            if not self.shield_on:
+                self.decay += 5e-3*alpha
+
         record_track(recorder,eval_env,RL_agent.agent,RL_agent.agent.policy,self.maxsteps,3)
         return returns,episodes_list
+
+    def set_shield_switch(self,eps,s_type):
+        self.shield_switch_episode = eps
+        self.shield_switch_type = s_type
 
     def simulate_deep_RL_fixed_policy(self, recorder, total_nr_runs=5, eval_interval=1000, eval_episodes=10, eval_env=None,
                          agent_arg='DQN', experience_set=None,prob=0.2):
